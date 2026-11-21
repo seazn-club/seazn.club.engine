@@ -115,7 +115,7 @@ export function devBundleModules(bundle) {
 }
 
 /** The modules of the engine's emitted build among a bundle's module paths. Metro records REAL paths, and where the package sits
- *  depends on the installer: `node_modules/@seazn/engine/dist/...` for a copy, `node_modules/.pnpm/<id>/node_modules/@onryde/seazn-engine/dist/...`
+ *  depends on the installer: `node_modules/@seazn/engine/dist/...` for a copy, `node_modules/.pnpm/<id>/node_modules/@seazn-club/seazn-engine/dist/...`
  *  under pnpm (its virtual store names the directory by the package's own name, not the alias). `names` are the spellings to
  *  accept (the alias and the published name). */
 export function engineModules(paths, names) {

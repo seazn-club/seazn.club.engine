@@ -1,4 +1,4 @@
-// Copied from onryde/seazn.club@5a67fbf37d25675c683bbc91785bba5bacd93714:tools/matrix/__tests__/spawn-budget.ts (engine-split 2b Task E1;
+// Copied from seazn-club/seazn.club@5a67fbf37d25675c683bbc91785bba5bacd93714:tools/matrix/__tests__/spawn-budget.ts (engine-split 2b Task E1;
 // unedited) for the tests moved in beside it (test/ci-wiring.test.ts, test/matrix-workflow.test.ts).
 // One spawned CLI's cap, and the test budget derived from it (final batch
 // FB-6). AGENTS.md class 20: a flat test timeout beside a derived cost is a

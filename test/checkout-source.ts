@@ -1,6 +1,6 @@
-// The checkout's own source, for the tests in test/ that READ `src/` as text: the tests moved in from onryde/seazn.club and the engine
+// The checkout's own source, for the tests in test/ that READ `src/` as text: the tests moved in from seazn-club/seazn.club and the engine
 // halves split from them (engine-split 2b Tasks E1 and E2: outcome-readers, tie-declaration-parity, scenarios, http-driver, append-event,
-// ci-wiring). In onryde/seazn.club they lived in apps/web and tools/matrix and never ran under Stryker. Here they do: every test runs
+// ci-wiring). In seazn-club/seazn.club they lived in apps/web and tools/matrix and never ran under Stryker. Here they do: every test runs
 // from a COPY of this repository, `<repo>/.stryker-tmp/sandbox-<id>/`, and the copy of every file a leg mutates is INSTRUMENTED. Stryker
 // prepends its helpers (whose `cover.apply(null, arguments)` is an `.apply(` call site) and wraps each expression it can mutate in a
 // `stryMutAct_<hash>("n") ? ... : ...` choice, so a text scan of the copy counts code nobody wrote and the leg's dry run fails

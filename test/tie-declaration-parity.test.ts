@@ -1,4 +1,4 @@
-// Engine-split 2b Task E1 (plan Task E1 step 2; the 2b-readers review, m1). onryde/seazn.club's matrix readers used to find the
+// Engine-split 2b Task E1 (plan Task E1 step 2; the 2b-readers review, m1). seazn-club/seazn.club's matrix readers used to find the
 // tie-capable sports by scanning this tree's sport sources for a `kind: "tie"` outcome (tools/matrix applicability.test.ts and
 // streams.test.ts). Batch R moved them onto the installed surface: they now take the set from each module's own
 // `reachableResultKinds` declaration. That read trusts the declaration it guards, so a sport whose fold writes a tie but forgets

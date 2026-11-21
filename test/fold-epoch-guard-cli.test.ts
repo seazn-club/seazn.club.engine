@@ -846,7 +846,7 @@ describe("fold-epoch-guard CLI: this repository's import commit, whose HEAD^1 ho
     }
     const repo: Repo = { top, eng: top };
     edit(repo);
-    commit(repo, "chore: import @onryde/seazn-engine");
+    commit(repo, "chore: import @seazn-club/seazn-engine");
     return repo;
   }
   const NOTICE = `::notice::fold-epoch: HEAD^1 holds no engine (no golden corpus, no ${EPOCH_FILE} and no ${GUARD} anywhere in its tree): the commit that brings the engine in, so the tree is checked against itself`;

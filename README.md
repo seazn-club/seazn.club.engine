@@ -1,28 +1,28 @@
-# @onryde/seazn-engine
+# @seazn-club/seazn-engine
 
 The pure tournament engine behind [seazn.club](https://seazn.club): an event-sourced kernel (match events fold into
 state), the sport modules built on it, competition structure and standings, fixture generation and a scheduling toolkit.
 It has no effectful dependencies: no database, no network, no logger.
 
-The source lives in [onryde/seazn.club.engine](https://github.com/onryde/seazn.club.engine). Its history before the split is
-`packages/engine` in onryde/seazn.club at tag `engine-split-base` (`5a67fbf37d`). Design:
-[docs/superpowers/specs/2026-10-13-engine-split-design.md](https://github.com/onryde/seazn.club/blob/main/docs/superpowers/specs/2026-10-13-engine-split-design.md).
+The source lives in [seazn-club/seazn.club.engine](https://github.com/seazn-club/seazn.club.engine). Its history before the split is
+`packages/engine` in seazn-club/seazn.club at tag `engine-split-base` (`5a67fbf37d`). Design:
+[docs/superpowers/specs/2026-10-13-engine-split-design.md](https://github.com/seazn-club/seazn.club/blob/main/docs/superpowers/specs/2026-10-13-engine-split-design.md).
 
 ## Install
 
-Published to GitHub Packages under the `@onryde` scope. Point the scope at the registry and authenticate with a token that
+Published to GitHub Packages under the `@seazn-club` scope. Point the scope at the registry and authenticate with a token that
 can read packages:
 
 ```ini
 # .npmrc
-@onryde:registry=https://npm.pkg.github.com
+@seazn-club:registry=https://npm.pkg.github.com
 //npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}
 ```
 
 Code in seazn.club imports the package as `@seazn/engine`, so install it under that alias and the same specifiers work:
 
 ```sh
-pnpm add @seazn/engine@npm:@onryde/seazn-engine@<version> zod
+pnpm add @seazn/engine@npm:@seazn-club/seazn-engine@<version> zod
 ```
 
 ESM only.

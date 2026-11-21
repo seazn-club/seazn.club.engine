@@ -48,7 +48,7 @@ const RUNAWAY = { lowMb: 1024, lowSeconds: 13.9, highMb: 4096, highSeconds: 42.3
 const HOSTED = { cores: 4, memBytes: 16 * 1024 ** 3, workersPerSandbox: 1 };
 const HOSTED_CONCURRENCY = 3;
 const MB = 1024 ** 2;
-/** THE EXCEPTION'S MEASUREMENTS (onryde/seazn.club mutation.yml dispatches, cold, every log "Cache not found"; the tree engine #5
+/** THE EXCEPTION'S MEASUREMENTS (seazn-club/seazn.club mutation.yml dispatches, cold, every log "Cache not found"; the tree engine #5
  *  re-measured against, which this repository's src/ copies). core-2 at 888 mutants (the instrumenter's count of this tree too):
  *  its dry run ran out of memory at 2560 MB (run 40984031307, job 123830750053, sha 499f6daf4) and at 2730 MB, the most the
  *  default's half-the-runner rule below allows (run 41153927287, job 124396508011, sha 46222a238): each "Child process ran out of

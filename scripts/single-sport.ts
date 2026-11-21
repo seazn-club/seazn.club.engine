@@ -1,7 +1,7 @@
-// Moved from onryde/seazn.club@5a67fbf37d25675c683bbc91785bba5bacd93714:tools/matrix/single-sport.ts (engine-split 2b Task E1;
+// Moved from seazn-club/seazn.club@5a67fbf37d25675c683bbc91785bba5bacd93714:tools/matrix/single-sport.ts (engine-split 2b Task E1;
 // plan false premise 7), re-rooted: the engine is this repository's root, so the scope is src/, the baseline is
 // scripts/single-sport-baseline.json and the package.json script is "single-sport". apps/web/src, the second name
-// root there, is not in this repository; its half of the baseline stays in onryde/seazn.club.
+// root there, is not in this repository; its half of the baseline stays in seazn-club/seazn.club.
 // R26: the single-sport ratchet. Counts the unreasoned single-sport pins in
 // the sport sweep's scope and ratchets them against a committed baseline, so
 // no count can rise — not in the tool, and not in CI, which also compares the
@@ -81,7 +81,7 @@
 //   3  the scanner crashed — never 1, which would read as a ratchet verdict.
 //   (3 also: a crash while the CLI LOADS, before any of its code runs — a
 //   strip-types parse error, a missing export, a module that throws — through
-//   onryde/seazn.club's `pnpm matrix:single-sport`, whose preload scripts/lib/crash-exit.ts maps it; this
+//   seazn-club/seazn.club's `pnpm matrix:single-sport`, whose preload scripts/lib/crash-exit.ts maps it; this
 //   repository has no such preload, so its `pnpm single-sport`, like a bare `node …` run, exits 1 on one.
 //   Final batch F-6.)
 // Deterministic: files in codepoint order, pins in source order, keys sorted.

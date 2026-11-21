@@ -1,4 +1,4 @@
-// Copied from onryde/seazn.club@5a67fbf37d25675c683bbc91785bba5bacd93714:tools/matrix/lib/harness-path.ts (engine-split 2b
+// Copied from seazn-club/seazn.club@5a67fbf37d25675c683bbc91785bba5bacd93714:tools/matrix/lib/harness-path.ts (engine-split 2b
 // Task E1; one edit: a type-only `!` in livePath, which this repository's noUncheckedIndexedAccess needs) for
 // scripts/single-sport.ts, which asks it for the spellings its baseline has had at a REF. No path of this repository
 // lies under the harness directories below, so every path has only itself.

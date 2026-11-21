@@ -1,4 +1,4 @@
-// Copied from onryde/seazn.club@5a67fbf37d25675c683bbc91785bba5bacd93714:tools/matrix/__tests__/workflow-text.ts (engine-split 2b Task E1;
+// Copied from seazn-club/seazn.club@5a67fbf37d25675c683bbc91785bba5bacd93714:tools/matrix/__tests__/workflow-text.ts (engine-split 2b Task E1;
 // one edit: a type-only `!` on five indexed reads, which this repository's
 // noUncheckedIndexedAccess needs) for the tests moved in beside it (test/ci-wiring.test.ts, test/matrix-workflow.test.ts).
 // Hand-parsed workflow text, shared by ci-wiring.test.ts (ci.yml) and matrix-workflow.test.ts (matrix-truth.yml).

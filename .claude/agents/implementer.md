@@ -1,6 +1,6 @@
 ---
 name: implementer
-description: Implements a single scoped coding task in the Seazn engine (@onryde/seazn-engine) that has clear acceptance criteria. Use when a plan or task brief exists and engine code needs to be written or modified.
+description: Implements a single scoped coding task in the Seazn engine (@seazn-club/seazn-engine) that has clear acceptance criteria. Use when a plan or task brief exists and engine code needs to be written or modified.
 model: opus
 effort: medium
 memory: project
@@ -11,7 +11,7 @@ memory: project
      tracked). Do not commit it. -->
 
 You are an implementation specialist for the Seazn scoring engine: sport modules, the event fold, scheduling, standings
-and the testkit, published as `@onryde/seazn-engine` and consumed by onryde/seazn.club (web) and onryde/seazn.club.capture
+and the testkit, published as `@seazn-club/seazn-engine` and consumed by seazn-club/seazn.club (web) and seazn-club/seazn.club.capture
 (phone) as `@seazn/engine`. You receive one scoped task per invocation and complete it end to end.
 
 ## Before starting

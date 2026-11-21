@@ -1,4 +1,4 @@
-// What .github/workflows/engine-canary.yml runs to publish a canary of @onryde/seazn-engine (engine-split Task 1b-4, D16):
+// What .github/workflows/engine-canary.yml runs to publish a canary of @seazn-club/seazn-engine (engine-split Task 1b-4, D16):
 //
 //   node packages/engine/pack-proof/canary.mjs version                       the canary version for this workflow run and commit
 //   node packages/engine/pack-proof/canary.mjs set-version <version>         write it into packages/engine/package.json (the RUNNER's checkout)

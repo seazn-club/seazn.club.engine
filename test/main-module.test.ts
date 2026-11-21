@@ -1,8 +1,8 @@
-// Moved from onryde/seazn.club@5a67fbf37d25675c683bbc91785bba5bacd93714:scripts/__tests__/main-module.test.ts (engine-split 2b Task E1; reverse inventory row 15,
+// Moved from seazn-club/seazn.club@5a67fbf37d25675c683bbc91785bba5bacd93714:scripts/__tests__/main-module.test.ts (engine-split 2b Task E1; reverse inventory row 15,
 // :59-65): the FB-10 test, which starts the engine's own boundary gate through a symlinked path. The rest of that file tests the
-// root's scripts/lib/main-module.ts and stays in onryde/seazn.club. The title and assertions are verbatim; only paths are
+// root's scripts/lib/main-module.ts and stays in seazn-club/seazn.club. The title and assertions are verbatim; only paths are
 // re-rooted (the engine is this repository's root: `packages/engine/scripts/engine-boundary.ts` is `scripts/engine-boundary.ts`).
-// The ledger is onryde/seazn.club docs/superpowers/specs/engine-split/ledgers/2b.json.
+// The ledger is seazn-club/seazn.club docs/superpowers/specs/engine-split/ledgers/2b.json.
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";

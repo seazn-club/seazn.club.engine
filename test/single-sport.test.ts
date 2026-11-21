@@ -1,5 +1,5 @@
 // Engine-split 2b Task E2 (plan false premise 2): the single-sport ratchet's `--check --against HEAD^1` on this repository's import commit.
-// scripts/single-sport.ts was moved in by Task E1 from onryde/seazn.club's tools/matrix/single-sport.ts; its own test file
+// scripts/single-sport.ts was moved in by Task E1 from seazn-club/seazn.club's tools/matrix/single-sport.ts; its own test file
 // (tools/matrix/__tests__/single-sport.test.ts) stays there with the app's half of the ratchet, so this file holds the engine repository's
 // cases only: the ones that exist because this repository starts at ONE import commit whose parent is the README commit.
 //   - On the import commit CI's HEAD^1 is that README commit: no baseline, no scanner and no package.json there. That is "the baseline is
@@ -8,7 +8,7 @@
 //   - A HEAD^1 that does not resolve (a shallow clone) is refused, exit 2.
 // Every claim is checked by RUNNING the CLI against a real git history, the engine at the repository root as here.
 //
-// The second half of this file (the scope and the ZERO refusal) is the engine's twin of three cases that onryde/seazn.club's
+// The second half of this file (the scope and the ZERO refusal) is the engine's twin of three cases that seazn-club/seazn.club's
 // tools/matrix/__tests__/single-sport.test.ts held at engine-split-base and lost when the scanner's engine scope roots left that repository
 // (ledger docs/superpowers/specs/engine-split/ledgers/2b.json, 2b A3): "one scope root that finds nothing is refused by name even when the
 // others find files" (retired, "the engine repo's test/single-sport.test.ts has no grammar or multi-root case"), the scope case (narrowed:
@@ -70,10 +70,10 @@ function importCommit(): string {
     "src/scheduling/sched.test.ts": "const a = 1;\n",
     [PIN_FILE]: `f("${SPORT}");\n`,
     [BASELINE_PATH]: baseline({ [`${PIN_FILE}:${SPORT}`]: 1 }),
-    "package.json": `${JSON.stringify({ name: "@onryde/seazn-engine", scripts: { [RATCHET_SCRIPT]: `node --experimental-strip-types ${SCANNER_PATH}` } }, null, 2)}\n`,
+    "package.json": `${JSON.stringify({ name: "@seazn-club/seazn-engine", scripts: { [RATCHET_SCRIPT]: `node --experimental-strip-types ${SCANNER_PATH}` } }, null, 2)}\n`,
   });
   git(root, "add", "-A");
-  git(root, "commit", "-q", "-m", "chore: import @onryde/seazn-engine");
+  git(root, "commit", "-q", "-m", "chore: import @seazn-club/seazn-engine");
   return root;
 }
 const NOTICE = `::notice::single-sport: HEAD^1 has no ${BASELINE_PATH} yet — the baseline is being introduced, so its own counts are the ceiling`;

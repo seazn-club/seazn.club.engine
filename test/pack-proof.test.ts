@@ -238,7 +238,7 @@ describe("the Metro dev bundle reader", () => {
   const mod = (id: number, deps: number[], p: string) => `__d(function (global, _$$_REQUIRE, _$$_IMPORT_DEFAULT, module, exports, _dependencyMap) {\n  var x = 1;\n},${id},[${deps.join(",")}],"${p}");`;
   const bundle = [
     mod(0, [1], "index.js"),
-    mod(1, [], "node_modules/.pnpm/@onryde+seazn-engine@file+x/node_modules/@onryde/seazn-engine/dist/core/index.js"),
+    mod(1, [], "node_modules/.pnpm/@seazn-club+seazn-engine@file+x/node_modules/@seazn-club/seazn-engine/dist/core/index.js"),
     mod(2, [], "node_modules/@seazn/engine/dist/sport/index.js"),
     "__r(0);",
   ].join("\n");
@@ -246,7 +246,7 @@ describe("the Metro dev bundle reader", () => {
   it("reads every module path, one per __d( definition", () => {
     expect(devBundleModules(bundle)).toEqual([
       "index.js",
-      "node_modules/.pnpm/@onryde+seazn-engine@file+x/node_modules/@onryde/seazn-engine/dist/core/index.js",
+      "node_modules/.pnpm/@seazn-club+seazn-engine@file+x/node_modules/@seazn-club/seazn-engine/dist/core/index.js",
       "node_modules/@seazn/engine/dist/sport/index.js",
     ]);
   });
@@ -264,8 +264,8 @@ describe("the Metro dev bundle reader", () => {
       "node_modules/zod/dist/x.js",
       "node_modules/@seazn/engine/src/x.js",
     ];
-    expect(engineModules(paths, ["@seazn/engine", "@onryde/seazn-engine"])).toEqual([
-      "node_modules/.pnpm/@onryde+seazn-engine@file+x/node_modules/@onryde/seazn-engine/dist/core/index.js",
+    expect(engineModules(paths, ["@seazn/engine", "@seazn-club/seazn-engine"])).toEqual([
+      "node_modules/.pnpm/@seazn-club+seazn-engine@file+x/node_modules/@seazn-club/seazn-engine/dist/core/index.js",
       "node_modules/@seazn/engine/dist/sport/index.js",
     ]);
     expect(() => engineModules(paths, [])).toThrow(/at least one package name/);
@@ -311,11 +311,11 @@ describe("the dev bundle is held to the static phone walk", () => {
   it("engineDistPaths keeps the engine's modules under either spelling, as their dist/ paths", () => {
     const paths = [
       "index.js",
-      "node_modules/.pnpm/@onryde+seazn-engine@file+x/node_modules/@onryde/seazn-engine/dist/core/index.js",
+      "node_modules/.pnpm/@seazn-club+seazn-engine@file+x/node_modules/@seazn-club/seazn-engine/dist/core/index.js",
       "node_modules/@seazn/engine/dist/sport/index.js",
       "node_modules/zod/dist/x.js",
     ];
-    expect(engineDistPaths(paths, ["@seazn/engine", "@onryde/seazn-engine"])).toEqual(["dist/core/index.js", "dist/sport/index.js"]);
+    expect(engineDistPaths(paths, ["@seazn/engine", "@seazn-club/seazn-engine"])).toEqual(["dist/core/index.js", "dist/sport/index.js"]);
   });
 
   const walked = ["src/core/index.ts", "src/core/a.ts", "src/sport/index.ts"];

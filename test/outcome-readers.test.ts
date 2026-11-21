@@ -1,14 +1,14 @@
-// Moved from onryde/seazn.club@5a67fbf37d25675c683bbc91785bba5bacd93714:apps/web/src/server/engine-db/__tests__/outcome-readers.test.ts (engine-split 2b Task E1; reverse inventory row 6, engine
+// Moved from seazn-club/seazn.club@5a67fbf37d25675c683bbc91785bba5bacd93714:apps/web/src/server/engine-db/__tests__/outcome-readers.test.ts (engine-split 2b Task E1; reverse inventory row 6, engine
 // half): the two tests of the "finding 1" describe that read only the engine — the golden corpora's settle allowance and the
 // teeth of its scan — with the scan helper they share, copied unedited. The describe's other tests scan apps/web, tools/matrix/lib
-// and the engine together and stay in onryde/seazn.club. Titles and assertions are verbatim; only paths are re-rooted (the engine
+// and the engine together and stay in seazn-club/seazn.club. Titles and assertions are verbatim; only paths are re-rooted (the engine
 // is this repository's root: `packages/engine/src/sports` is `src/sports`, and `@seazn/engine/core` is `../src/core/index.ts`). The
-// ledger is onryde/seazn.club docs/superpowers/specs/engine-split/ledgers/2b.json.
+// ledger is seazn-club/seazn.club docs/superpowers/specs/engine-split/ledgers/2b.json.
 //
 // Engine-split 2b Task E2 (owner ruling 2026-10-30, option A: split the mixed tests, same assertions): the other four tests of that file
 // scanned `apps/web/src`, `packages/engine/src` and `tools/matrix/lib` together. Each is SPLIT: its engine half is below, titled as the source
 // with " (engine half)", running the source's assertion logic verbatim over this repository's `src` alone; the app half keeps the original
-// id in onryde/seazn.club and scans the app's two roots. What is split is the DATA, never the logic: `ALLOWED`, the reader list and
+// id in seazn-club/seazn.club and scans the app's two roots. What is split is the DATA, never the logic: `ALLOWED`, the reader list and
 // `NOT_A_LEDGER_REPLAY` hold exactly the source's `packages/engine/src/...` rows, re-rooted, reasons unedited, and no other row; every
 // threshold and anti-vacuity count is the source's.
 //
