@@ -338,5 +338,5 @@ describe("TN-TS-1 a late toss seats the serve for the whole match: every prefix 
     console.info(`[toss] late-toss states compared: ${JSON.stringify(counts)}`);
     expect(counts.compared).toBeGreaterThan(1000);
     for (const key of ["early", "late", "doubles", "breaker", "mtb", "away", "home"] as const) expect(counts[key], key).toBeGreaterThan(0);
-  });
+  }, 30_000); // an O(streams x prefixes) fold sweep: 2.9-4.8s per file on GitHub runners before 2026-11-21, then over the 5s default twice on PR #56 and #57
 });
