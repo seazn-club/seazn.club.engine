@@ -1,8 +1,8 @@
-// Moved from onryde/seazn.club@5a67fbf37d25675c683bbc91785bba5bacd93714:tools/matrix/__tests__/ci-wiring.test.ts (engine-split 2b Task E1; reverse
+// Moved from seazn-club/seazn.club@5a67fbf37d25675c683bbc91785bba5bacd93714:tools/matrix/__tests__/ci-wiring.test.ts (engine-split 2b Task E1; reverse
 // inventory rows 18 and 29): the "Stryker floor CI wiring", "fold-epoch guard CI wiring" and "engine-pack CI wiring" describes,
 // which pin the engine's own CI steps. Titles and assertions are verbatim; only paths are re-rooted (the engine is this repository's
 // root: `packages/engine/<x>` reads `<x>`, the pnpm path filter `./packages/engine` is `.`). The ledger is
-// onryde/seazn.club docs/superpowers/specs/engine-split/ledgers/2b.json. Comments below are the source's, unedited.
+// seazn-club/seazn.club docs/superpowers/specs/engine-split/ledgers/2b.json. Comments below are the source's, unedited.
 // The two reads of `src/` (the corpora count and STATS_FOLD_VERSION's declaration line) are of the checkout's files, never a Stryker
 // sandbox's instrumented copy (./checkout-source.ts); everything else, the spawned guards included, still runs from REPO.
 import { spawnSync } from "node:child_process";
@@ -210,7 +210,7 @@ describe("engine shard CI wiring (the engine job split into engine-shard jobs an
   const agg = jobs.engine ?? "";
   const isComment = (l: string) => /^\s*#/.test(l);
   const codeOf = (job: string) => job.split("\n").filter((l) => !isComment(l));
-  /** The four checks main's branch protection requires, by display name (`gh api repos/onryde/seazn.club.engine/branches/main/protection/
+  /** The four checks main's branch protection requires, by display name (`gh api repos/seazn-club/seazn.club.engine/branches/main/protection/
    *  required_status_checks --jq .contexts`, 2026-11-10). Typed here: ci.yml cannot be asked what it must keep reporting. */
   const REQUIRED = [
     "Typecheck + lint + drift gates",

@@ -1,9 +1,9 @@
-// The engine half of one test of onryde/seazn.club@5a67fbf37d25675c683bbc91785bba5bacd93714:tools/matrix/__tests__/scenarios.test.ts (engine-split
+// The engine half of one test of seazn-club/seazn.club@5a67fbf37d25675c683bbc91785bba5bacd93714:tools/matrix/__tests__/scenarios.test.ts (engine-split
 // 2b Task E2; reverse inventory row 25b; owner ruling 2026-10-30, option A: split the mixed tests, same assertions). The source test pins the
 // product's lineup PUT from its source and ends on one scan over `apps/web/src` AND `packages/engine/src` for callers of `assertLineup(`. That
 // scan is the engine half: it is below, titled as the source with " (engine half)", over this repository's `src`, its expectations the source's
 // (the one caller is the engine's catalog, holding one call). The rest of the test, and the app's half of the scan, keep the original id in
-// onryde/seazn.club. The ledger is onryde/seazn.club docs/superpowers/specs/engine-split/ledgers/2b.json.
+// seazn-club/seazn.club. The ledger is seazn-club/seazn.club docs/superpowers/specs/engine-split/ledgers/2b.json.
 // Under Stryker the scan reads the checkout's `src`, never the sandbox's instrumented copy (./checkout-source.ts).
 import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";

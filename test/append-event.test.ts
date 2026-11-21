@@ -1,7 +1,7 @@
-// Moved from onryde/seazn.club@5a67fbf37d25675c683bbc91785bba5bacd93714:apps/web/src/server/engine-db/__tests__/append-event.test.ts (engine-split 2b Task E1; reverse inventory row 4):
+// Moved from seazn-club/seazn.club@5a67fbf37d25675c683bbc91785bba5bacd93714:apps/web/src/server/engine-db/__tests__/append-event.test.ts (engine-split 2b Task E1; reverse inventory row 4):
 // the K7 test of the "no logger outside the sanctioned funnel" describe, which polices the engine (zero effectful deps) and so
 // belongs with it. K5 and K6 police apps/web and stay there. The title and assertions are verbatim; only paths are re-rooted (the
-// engine is this repository's root: `packages/engine/src/sports` is `src/sports`). The ledger is onryde/seazn.club
+// engine is this repository's root: `packages/engine/src/sports` is `src/sports`). The ledger is seazn-club/seazn.club
 // docs/superpowers/specs/engine-split/ledgers/2b.json.
 // Under Stryker the scan reads the checkout's `src`, never the sandbox's instrumented copy (./checkout-source.ts).
 import { readFileSync, readdirSync } from "node:fs";

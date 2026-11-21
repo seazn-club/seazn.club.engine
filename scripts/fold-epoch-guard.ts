@@ -1,4 +1,4 @@
-// CLI: pnpm --filter @onryde/seazn-engine --fail-if-no-match fold-epoch:check --against <ref>      (node --experimental-strip-types scripts/fold-epoch-guard.ts)
+// CLI: pnpm --filter @seazn-club/seazn-engine --fail-if-no-match fold-epoch:check --against <ref>      (node --experimental-strip-types scripts/fold-epoch-guard.ts)
 // Engine-split Task 1e-2 (D15, D26), 1e-M (D34): a golden fold that moved must raise that sport's version, in the SAME diff.
 //
 // The golden corpora (src/sports/<dir>/<key>.golden.json) pin, for every sport, what a recorded event stream folds to: the state after
@@ -860,7 +860,7 @@ function report(before: Side, after: Side, commit: string, ref: string, against:
   out(`fold-epoch: STATS_FOLD_VERSION: ${stats.before ?? "(none)"} -> ${stats.after}, player stats moved in ${stats.moved} stream(s)${stats.sports.length === 0 ? "" : ` (${stats.sports.join(", ")})`}${stats.gained === 0 ? "" : `, newly recorded in ${stats.gained} stream(s) (${stats.gainedSports.join(", ")}) under touched fold source`}${stats.reason === null ? "" : ` - VIOLATION: ${stats.reason}`}`);
   out(`fold-epoch: ${compared.length} sports checked, ${streams} streams compared against ${against}: ${verdicts} violation(s), STATS_FOLD_VERSION ${stats.before ?? "(none)"} -> ${stats.after}`);
   if (verdicts > 0) {
-    out(`fold-epoch: to clear the violation(s) above, raise the sport's entry in ${prefix}${TABLE} in this same change: FOLD_EPOCH where a line says major owed (a phone computes what moved), FOLD_MINOR where it says minor owed (only the server does)${stats.reason === null ? "" : `, and STATS_FOLD_VERSION in ${prefix}${STATS_FILE} where its line says it must rise (it settles nothing else, and nothing else settles it)`}; CI compares the whole PR with the branch it merges into; to check it before pushing: pnpm --filter @onryde/seazn-engine fold-epoch:check --against origin/main`);
+    out(`fold-epoch: to clear the violation(s) above, raise the sport's entry in ${prefix}${TABLE} in this same change: FOLD_EPOCH where a line says major owed (a phone computes what moved), FOLD_MINOR where it says minor owed (only the server does)${stats.reason === null ? "" : `, and STATS_FOLD_VERSION in ${prefix}${STATS_FILE} where its line says it must rise (it settles nothing else, and nothing else settles it)`}; CI compares the whole PR with the branch it merges into; to check it before pushing: pnpm --filter @seazn-club/seazn-engine fold-epoch:check --against origin/main`);
     return 1;
   }
   if (streams === 0) throw new GuardRefusal(`compared no stream against ${against}: the baseline holds no golden corpus to hold the tree to, and a pass over nothing proves nothing`);

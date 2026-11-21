@@ -1,4 +1,4 @@
-// R4 sponsors on stream (onryde/seazn.club spec 2026-10-27-sponsors-on-stream-design.md §3.1) — a sport's NATURAL BREAKS:
+// R4 sponsors on stream (seazn-club/seazn.club spec 2026-10-27-sponsors-on-stream-design.md §3.1) — a sport's NATURAL BREAKS:
 // the pauses in play its own events open (an over's end, half-time, a set's end, a timeout), declared by the sport so the
 // overlay can air a sponsor card in one without keeping a table of sports. `SportModule.naturalBreaks` holds one.
 //

@@ -1,8 +1,8 @@
 name: CI
 
-# The engine repository's CI (engine-split 2b Task E2): the engine's jobs of onryde/seazn.club's ci.yml, ported with
+# The engine repository's CI (engine-split 2b Task E2): the engine's jobs of seazn-club/seazn.club's ci.yml, ported with
 # `--workspace packages/engine` / `--filter ./packages/engine` removed (the engine is this repository's root), plus the two jobs only a
-# published package needs: `changeset` (every PR declares its bump, and the bump covers the fold) and `downstream` (onryde/seazn.club@main
+# published package needs: `changeset` (every PR declares its bump, and the bump covers the fold) and `downstream` (seazn-club/seazn.club@main
 # on this PR's snapshot). On a pull request the checkout is the merge commit, whose first parent (HEAD^1) is the base tip; on a push to
 # main HEAD^1 is the previous commit. The import commit's HEAD^1 is the README commit, which holds no engine: each HEAD^1 gate below checks
 # the tree against itself there, with a notice, and never skips (test/stryker-floor.test.ts, test/single-sport.test.ts and
@@ -61,7 +61,7 @@ jobs:
       # HEAD^1 and the CLI refuses (exit 2), it does not pass. A base that holds no engine at all (the import commit's README parent) is the
       # tree checked against itself, with a notice. A name filter would otherwise match nothing and exit 0 in silence, so
       # --fail-if-no-match. test/ci-wiring.test.ts pins that this step always runs and always gates.
-      - run: pnpm --filter @onryde/seazn-engine --fail-if-no-match fold-epoch:check --against HEAD^1
+      - run: pnpm --filter @seazn-club/seazn-engine --fail-if-no-match fold-epoch:check --against HEAD^1
       # Engine schema-snapshot drift gate (#429). The frozen golden corpora compare recorded bytes, so they red only on a state path some
       # stream WRITES; a config knob no stream sets or an enum member no seed picks can be narrowed with every corpus green. The committed
       # src/sports/**/<key>.schema.json files are taken from the DECLARATION, so they cover the unexercised half, and this step is what makes
@@ -354,7 +354,7 @@ jobs:
           echo "changesets in this PR:"
           echo "$files"
       # The tables are found by their declaration under src/ (never by a path written here), read at the base and at the head as their
-      # `sport: n` entries with comments stripped, and compared; the bumps are the `@onryde/seazn-engine` lines of the PR's changesets, or, on
+      # `sport: n` entries with comments stripped, and compared; the bumps are the `@seazn-club/seazn-engine` lines of the PR's changesets, or, on
       # a release PR, its version bump.
       - name: Read the fold tables at the base and the head, and the bumps the PR declares
         id: fold
@@ -388,7 +388,7 @@ jobs:
             by="this release PR's version bump ($FROM -> $TO) is"
           else
             bumps="$(git diff --name-only --diff-filter=AM HEAD^1 HEAD -- '.changeset/*.md' | grep -vxF '.changeset/README.md' \
-              | while read -r f; do grep -hoE "^[\"']?@onryde/seazn-engine[\"']?: *(major|minor|patch)" "$f" | sed -E 's/.*: *//' || true; done \
+              | while read -r f; do grep -hoE "^[\"']?@seazn-club/seazn-engine[\"']?: *(major|minor|patch)" "$f" | sed -E 's/.*: *//' || true; done \
               | sort -u | tr '\n' ' ' || true)"
             by="this PR's changesets declare"
           fi
@@ -403,7 +403,7 @@ jobs:
           if [ "$EPOCH_MOVED" != "true" ]; then echo "no FOLD_EPOCH entry moved: no major owed"; exit 0; fi
           case " $BUMPS " in
             *" major "*) echo "FOLD_EPOCH moved, and $BY a major: in order" ;;
-            *) echo "::error::FOLD_EPOCH moved (an outdated phone must update), but $BY '${BUMPS:-nothing}' for @onryde/seazn-engine: a FOLD_EPOCH change is a major"; exit 1 ;;
+            *) echo "::error::FOLD_EPOCH moved (an outdated phone must update), but $BY '${BUMPS:-nothing}' for @seazn-club/seazn-engine: a FOLD_EPOCH change is a major"; exit 1 ;;
           esac
       - name: A moved FOLD_MINOR entry is released as at least a minor
         env:
@@ -416,22 +416,22 @@ jobs:
           if [ "$EPOCH_MOVED" = "true" ]; then echo "FOLD_EPOCH moved too: the major rule above judges this PR"; exit 0; fi
           case " $BUMPS " in
             *" major "*|*" minor "*) echo "FOLD_MINOR moved, and $BY at least a minor: in order" ;;
-            *) echo "::error::FOLD_MINOR moved, but $BY '${BUMPS:-nothing}' for @onryde/seazn-engine: a FOLD_MINOR-only change is at least a minor, never a patch"; exit 1 ;;
+            *) echo "::error::FOLD_MINOR moved, but $BY '${BUMPS:-nothing}' for @seazn-club/seazn-engine: a FOLD_MINOR-only change is at least a minor, never a patch"; exit 1 ;;
           esac
 
   # -------------------------------------------------------------------------
-  # Downstream (spec §9.3): onryde/seazn.club@main on THIS PR's snapshot (D16: `0.0.0-pr<N>.<sha>`, published by the release workflow's
+  # Downstream (spec §9.3): seazn-club/seazn.club@main on THIS PR's snapshot (D16: `0.0.0-pr<N>.<sha>`, published by the release workflow's
   # PR snapshot job). The app's typecheck, its match-rules contract tests and the tools/matrix unit tests; no DB. Skipped, with a notice
   # that says why, when there is no snapshot to install: a fork PR (no snapshot is published for one), an app main that does not install
-  # @onryde/seazn-engine from the registry yet (before the cutover), or no snapshot for this PR's commit after ten minutes (a warning).
+  # @seazn-club/seazn-engine from the registry yet (before the cutover), or no snapshot for this PR's commit after ten minutes (a warning).
   # -------------------------------------------------------------------------
   downstream:
-    name: Downstream (onryde/seazn.club@main on this PR's snapshot)
+    name: Downstream (seazn-club/seazn.club@main on this PR's snapshot)
     # a release/<version> PR consumes its changesets, so no snapshot is ever published for it to install
     if: github.event_name == 'pull_request' && !startsWith(github.head_ref, 'release/')
     runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 60
-    # packages: read installs @onryde/seazn-engine from GitHub Packages with this job's GITHUB_TOKEN.
+    # packages: read installs @seazn-club/seazn-engine from GitHub Packages with this job's GITHUB_TOKEN.
     permissions:
       contents: read
       packages: read
@@ -445,30 +445,30 @@ jobs:
       # Full history: the app's tools/matrix rebase-map test proves the ancestry of the SHAs it maps, and refuses a shallow clone.
       - uses: actions/checkout@v5
         with:
-          repository: onryde/seazn.club
+          repository: seazn-club/seazn.club
           ref: main
           path: app
           fetch-depth: 0
           persist-credentials: false
-      # registry-url + scope write an .npmrc (NPM_CONFIG_USERCONFIG) sending @onryde/* to GitHub Packages with NODE_AUTH_TOKEN.
+      # registry-url + scope write an .npmrc (NPM_CONFIG_USERCONFIG) sending @seazn-club/* to GitHub Packages with NODE_AUTH_TOKEN.
       - uses: actions/setup-node@v5
         with:
           node-version: 26
           registry-url: https://npm.pkg.github.com
-          scope: '@onryde'
+          scope: '@seazn-club'
       - name: Find this PR's snapshot (or skip, saying why)
         id: snapshot
         run: |
           set -euo pipefail
           skip() { echo "::notice::downstream skipped: $1"; echo "version=" >> "$GITHUB_OUTPUT"; exit 0; }
           if [ "$HEAD_REPO" != "$GITHUB_REPOSITORY" ]; then skip "a fork PR is given no snapshot (publishing one needs packages: write)"; fi
-          consumers="$(git -C app grep -l 'npm:@onryde/seazn-engine@' -- '*package.json' || true)"
-          if [ -z "$consumers" ]; then skip "onryde/seazn.club@main does not install @onryde/seazn-engine from the registry yet (before the cutover)"; fi
+          consumers="$(git -C app grep -l 'npm:@seazn-club/seazn-engine@' -- '*package.json' || true)"
+          if [ -z "$consumers" ]; then skip "seazn-club/seazn.club@main does not install @seazn-club/seazn-engine from the registry yet (before the cutover)"; fi
           for attempt in $(seq 1 20); do
-            if ! versions="$(npm view @onryde/seazn-engine versions --json 2> "$RUNNER_TEMP/npm-view.err")"; then
+            if ! versions="$(npm view @seazn-club/seazn-engine versions --json 2> "$RUNNER_TEMP/npm-view.err")"; then
               if grep -qE 'E401|E403' "$RUNNER_TEMP/npm-view.err"; then
                 cat "$RUNNER_TEMP/npm-view.err"
-                echo "::error::GitHub Packages refused this job's token: give this repository read access to the @onryde/seazn-engine package"
+                echo "::error::GitHub Packages refused this job's token: give this repository read access to the @seazn-club/seazn-engine package"
                 exit 1
               fi
               versions="[]"
@@ -482,7 +482,7 @@ jobs:
               process.stdout.write(hit.at(-1) ?? "");
             ' "$versions")"
             if [ -n "$v" ]; then
-              echo "snapshot: @onryde/seazn-engine@$v (attempt $attempt)"
+              echo "snapshot: @seazn-club/seazn-engine@$v (attempt $attempt)"
               echo "version=$v" >> "$GITHUB_OUTPUT"
               exit 0
             fi
@@ -501,12 +501,12 @@ jobs:
         run: |
           set -euo pipefail
           cd app
-          # The manifests keep their own range (`npm:@onryde/seazn-engine@^1.0.0`): the app's tests pin it (workspace-wiring, toolchain,
+          # The manifests keep their own range (`npm:@seazn-club/seazn-engine@^1.0.0`): the app's tests pin it (workspace-wiring, toolchain,
           # engine-package-identity, registry-install). A pnpm override moves every consumer instead. pnpm matches an override on the
           # dependency's KEY and every consumer aliases the engine as `@seazn/engine`, so the override is keyed on the alias: one keyed
-          # `@onryde/seazn-engine` matches no consumer and leaves them all on the range.
-          consumers="$(git grep -l 'npm:@onryde/seazn-engine@' -- '*package.json')"
-          entry="  \"@seazn/engine\": \"npm:@onryde/seazn-engine@$V\""
+          # `@seazn-club/seazn-engine` matches no consumer and leaves them all on the range.
+          consumers="$(git grep -l 'npm:@seazn-club/seazn-engine@' -- '*package.json')"
+          entry="  \"@seazn/engine\": \"npm:@seazn-club/seazn-engine@$V\""
           # into the workspace's own `overrides:` map (a second `overrides:` key is a YAML error), or a new map when it has none
           if grep -qx 'overrides:' pnpm-workspace.yaml; then
             awk -v e="$entry" '{ print } $0 == "overrides:" { print e }' pnpm-workspace.yaml > "$RUNNER_TEMP/pnpm-workspace.yaml"
@@ -522,8 +522,8 @@ jobs:
             exit 1
           fi
           # a glob, not `ls | grep -q`: grep -q stops at the first match and, under pipefail, the SIGPIPE-d ls reads as a failure
-          if ! compgen -G "node_modules/.pnpm/@onryde+seazn-engine@${V}*" > /dev/null; then
-            echo "::error::the install did not resolve @onryde/seazn-engine@$V"
+          if ! compgen -G "node_modules/.pnpm/@seazn-club+seazn-engine@${V}*" > /dev/null; then
+            echo "::error::the install did not resolve @seazn-club/seazn-engine@$V"
             exit 1
           fi
           # and every consumer links it: an override that missed one leaves it on the range, beside a resolved snapshot
@@ -532,11 +532,11 @@ jobs:
             d="$(dirname "$f")"
             to="$(readlink -f "$d/node_modules/@seazn/engine" || true)"
             case "$to" in
-              */node_modules/.pnpm/@onryde+seazn-engine@"$V"[_/]*) n=$((n + 1)); echo "$d: @seazn/engine -> @onryde/seazn-engine@$V" ;;
-              *) echo "::error::$d: @seazn/engine resolves to '${to}', not the snapshot @onryde/seazn-engine@$V"; exit 1 ;;
+              */node_modules/.pnpm/@seazn-club+seazn-engine@"$V"[_/]*) n=$((n + 1)); echo "$d: @seazn/engine -> @seazn-club/seazn-engine@$V" ;;
+              *) echo "::error::$d: @seazn/engine resolves to '${to}', not the snapshot @seazn-club/seazn-engine@$V"; exit 1 ;;
             esac
           done
-          if [ "$n" -eq 0 ]; then echo "::error::no consumer of @onryde/seazn-engine was checked"; exit 1; fi
+          if [ "$n" -eq 0 ]; then echo "::error::no consumer of @seazn-club/seazn-engine was checked"; exit 1; fi
           echo "$n consumer(s) on the snapshot, every manifest unchanged"
       # One judge for both test steps: red on zero tests, on any failed suite (a file that fails to COLLECT counts only there), on passed
       # != total (a skip or todo included), on a file outside the step's directory, and on fewer files than the step named.

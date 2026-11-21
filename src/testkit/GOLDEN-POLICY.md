@@ -403,7 +403,7 @@ change; only a module's code and its defaults do.
 To check before pushing (from any directory; it also reads uncommitted work, so
 re-baseline into a clean tree, bump, and run it):
 
-    pnpm --filter @onryde/seazn-engine fold-epoch:check --against origin/main
+    pnpm --filter @seazn-club/seazn-engine fold-epoch:check --against origin/main
 
 It prints one line per sport (major and minor before -> after; streams matched,
 changed, deltas-only, removed, added, recorded) and `N sports checked, M streams

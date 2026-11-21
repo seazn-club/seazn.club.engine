@@ -3,7 +3,7 @@ name: Stryker mutation
 # W1d (owner rulings 66, 67, 68; D14). Weekly mutation testing of the engine, placement scheduling excepted. One job per
 # STRYKER_GROUPS key (stryker.groups.mjs); a pull request runs the probe only (D3, the PR self-proof).
 # Triggers:
-#  - schedule: weekly, Sun 03:23 UTC — GATED by vars.STRYKER_WEEKLY_ENABLED (D29; the form of onryde/seazn.club's matrix-truth.yml): while the variable is
+#  - schedule: weekly, Sun 03:23 UTC — GATED by vars.STRYKER_WEEKLY_ENABLED (D29; the form of seazn-club/seazn.club's matrix-truth.yml): while the variable is
 #    not 'true' a firing is a visible run of skipped jobs. A pull request and a dispatch still run while it is off, which is
 #    all of PR-A's state.
 #  - workflow_dispatch: `group` is `all` (every group but the probe) or one STRYKER_GROUPS key, the probe included; the choices

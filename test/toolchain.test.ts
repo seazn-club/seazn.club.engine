@@ -1,4 +1,4 @@
-// Toolchain pins the app repo (onryde/seazn.club) held over the engine until the split, and retired with it. At the tag engine-split-base
+// Toolchain pins the app repo (seazn-club/seazn.club) held over the engine until the split, and retired with it. At the tag engine-split-base
 // (5a67fbf37d25675c683bbc91785bba5bacd93714) apps/web/src/__tests__/toolchain.test.ts read packages/engine/tsconfig.json and
 // packages/engine/eslint.config.mjs; the package left that repository and the published tarball ships neither file, so the app cannot pin
 // them any more (ledger docs/superpowers/specs/engine-split/ledgers/2b.json, 2b A3: "engine twin owed" on the ES2022 case, and the

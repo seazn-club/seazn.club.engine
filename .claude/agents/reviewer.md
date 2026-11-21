@@ -1,6 +1,6 @@
 ---
 name: reviewer
-description: Reviews code changes in the Seazn engine (@onryde/seazn-engine) for correctness against the sport's rules, fold and golden safety, and house rules. Use proactively after the implementer finishes, before the task is marked complete.
+description: Reviews code changes in the Seazn engine (@seazn-club/seazn-engine) for correctness against the sport's rules, fold and golden safety, and house rules. Use proactively after the implementer finishes, before the task is marked complete.
 model: opus
 effort: medium
 memory: project

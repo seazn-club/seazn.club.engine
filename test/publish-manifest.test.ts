@@ -67,7 +67,7 @@ describe("publish manifest", () => {
   });
 
   it("records where the package lives, and only the dist build is named `build:dist` (a `build` script would join every turbo typecheck)", () => {
-    expect(pkg.repository).toEqual({ type: "git", url: "https://github.com/onryde/seazn.club.engine" });
+    expect(pkg.repository).toEqual({ type: "git", url: "https://github.com/seazn-club/seazn.club.engine" });
     expect(typeof pkg.scripts["build:dist"]).toBe("string");
     expect(pkg.scripts.build).toBeUndefined();
   });
@@ -162,8 +162,8 @@ describe("publish manifest", () => {
     // the subpaths come from the manifest's own exports, so a new export without a README line fails here
     for (const k of Object.keys(pkg.exports)) expect(readme, `README names the ${k} subpath`).toContain(`\`${k}\``);
     expect(readme).toContain("https://npm.pkg.github.com");
-    expect(readme).toContain("@onryde:registry=https://npm.pkg.github.com");
-    expect(readme).toContain("@seazn/engine@npm:@onryde/seazn-engine");
+    expect(readme).toContain("@seazn-club:registry=https://npm.pkg.github.com");
+    expect(readme).toContain("@seazn/engine@npm:@seazn-club/seazn-engine");
     // required peer vs optional peers, each named in the sentence that gives its status
     expect(readme).toMatch(/`zod`[^\n]*required/i);
     for (const p of Object.keys(pkg.peerDependenciesMeta)) expect(readme, `README names optional peer ${p}`).toContain(`\`${p}\``);

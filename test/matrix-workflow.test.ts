@@ -1,20 +1,20 @@
-// Moved from onryde/seazn.club@5a67fbf37d25675c683bbc91785bba5bacd93714:tools/matrix/__tests__/matrix-workflow.test.ts (engine-split 2b Task E1; reverse
+// Moved from seazn-club/seazn.club@5a67fbf37d25675c683bbc91785bba5bacd93714:tools/matrix/__tests__/matrix-workflow.test.ts (engine-split 2b Task E1; reverse
 // inventory row 17): the 42 tests that pin mutation.yml (the "both workflows run on the switchable runner" describe and every
 // describe from "mutation.yml and the runner wiring" on), with the module-level helpers they use, copied unedited (REPO, the
 // workflow reads, the scratch directory, SAME_REPO, ifOf/evalIf/evalExpr/ctxOf, permissionBlocks). Titles and assertions are
 // verbatim; only paths are re-rooted: the engine is this repository's root, so a repo path `packages/engine/<x>` is `<x>`, the
 // engine directory `packages/engine` is `.`, and the pnpm path filter `./packages/engine...` is `....`. Three of the tests compare
-// mutation.yml with matrix-truth.yml, which stays in onryde/seazn.club. The ledger is onryde/seazn.club
+// mutation.yml with matrix-truth.yml, which stays in seazn-club/seazn.club. The ledger is seazn-club/seazn.club
 // docs/superpowers/specs/engine-split/ledgers/2b.json. Comments below are the source's, unedited.
 // Task E3 (owner ruling 2026-10-30, option A): matrix-truth.yml never exists in this repository, so the file reads mutation.yml
 // alone. The two tests that asserted over both workflows keep their mutation.yml half, titled "<source title> (engine half)" (the
-// matrix-truth.yml half stays in onryde/seazn.club under the source id); the guard test keeps its mutation.yml-only part under its
+// matrix-truth.yml half stays in seazn-club/seazn.club under the source id); the guard test keeps its mutation.yml-only part under its
 // own title, and its comparison with matrix-truth.yml's script is retired in the ledger (cross-repo). The runner and weekly variables
 // are this repository's own (D32g, D29): vars.MATRIX_RUNNER is vars.STRYKER_RUNNER and vars.MATRIX_WEEKLY_ENABLED is
 // vars.STRYKER_WEEKLY_ENABLED. Paths the import left in the monorepo's shape are re-rooted the same way as the rest: the upload's
 // "under packages/engine/" is "under the repository root", and the floors job's `../../floors-in` is `floors-in`.
 /* eslint-disable @typescript-eslint/no-implied-eval, @typescript-eslint/no-unnecessary-type-assertion -- the body is moved
-   verbatim: onryde/seazn.club lints tools/matrix with its scripts/ config, which runs neither rule; evalExpr's Function is
+   verbatim: seazn-club/seazn.club lints tools/matrix with its scripts/ config, which runs neither rule; evalExpr's Function is
    restricted to the workflow's own committed text by its token whitelist. */
 import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
@@ -42,7 +42,7 @@ afterEach(() => { vi.restoreAllMocks(); });
 let seq = 0;
 const fresh = (label: string): string => { const d = join(scratch, `${label}-${++seq}`); mkdirSync(d, { recursive: true }); return d; };
 
-const SAME_REPO = "onryde/seazn.club";
+const SAME_REPO = "seazn-club/seazn.club";
 
 /** `if:` expression of a job, from its own text; throws when the job has none (a gate that is not there reds, never reads as open). */
 function ifOf(jobText: string): string {
@@ -277,7 +277,7 @@ describe("the visibility guard (Review Focus 2)", () => {
     try {
       writeFileSync(join(dir, "gh"), `#!/bin/sh\nn=$(cat "$GH_STATE/n" 2>/dev/null || echo 0); n=$((n+1)); echo $n > "$GH_STATE/n"\nif [ "$n" -le "$GH_FAILS" ]; then if [ -n "$GH_BODY" ]; then echo "$GH_BODY"; fi; echo 'HTTP 403' >&2; exit 1; fi\necho "$GH_ANSWER"\n`, { mode: 0o755 });
       writeFileSync(join(dir, "sleep"), `#!/bin/sh\necho "$1" >> "$GH_STATE/sleeps"\n`, { mode: 0o755 });
-      const r = spawnSync("bash", ["-c", script], { env: { PATH: `${dir}:${process.env.PATH ?? ""}`, GITHUB_REPOSITORY: "onryde/seazn.club", GH_STATE: dir, GH_FAILS: String(gh.fails), GH_ANSWER: gh.answer, GH_BODY: gh.body ?? "", ...env }, encoding: "utf8" });
+      const r = spawnSync("bash", ["-c", script], { env: { PATH: `${dir}:${process.env.PATH ?? ""}`, GITHUB_REPOSITORY: "seazn-club/seazn.club", GH_STATE: dir, GH_FAILS: String(gh.fails), GH_ANSWER: gh.answer, GH_BODY: gh.body ?? "", ...env }, encoding: "utf8" });
       const lines = (f: string) => (existsSync(join(dir, f)) ? readFileSync(join(dir, f), "utf8").split("\n").filter(Boolean) : []);
       return { status: r.status, stdout: r.stdout, stderr: r.stderr, calls: Number(lines("n")[0] ?? 0), sleeps: lines("sleeps") };
     } finally { rmSync(dir, { recursive: true, force: true }); }
@@ -313,7 +313,7 @@ describe("the visibility guard (Review Focus 2)", () => {
       checked++;
     }
     expect(checked, "jobs of mutation.yml").toBe(Object.keys(MJOBS).length);
-    // the positive control (matrix-truth.yml's own guard still names itself) stays with the app half in onryde/seazn.club
+    // the positive control (matrix-truth.yml's own guard still names itself) stays with the app half in seazn-club/seazn.club
     // and the public repository still passes through mutation.yml's guard (a refusal worded differently is not a refusal always)
     expect(runWith(env, { fails: 0, answer: "public" }, stepOf(MJOBS.plan!, GUARD).script!).status).toBe(0);
   });

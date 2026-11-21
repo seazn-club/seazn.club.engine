@@ -1,4 +1,4 @@
-// R4 sponsors on stream, S1 + S2 (spec onryde/seazn.club docs/superpowers/specs/2026-10-27-sponsors-on-stream-design.md §3.1;
+// R4 sponsors on stream, S1 + S2 (spec seazn-club/seazn.club docs/superpowers/specs/2026-10-27-sponsors-on-stream-design.md §3.1;
 // plan decision P1) — `SportModule.naturalBreaks`: the pauses a sport's own events open, which a sponsor card may air in.
 //
 // Where the expected values come from (never from the rule under test):

@@ -859,7 +859,7 @@ describe("--check-file-against on this repository's import commit (engine-split 
     git(root, "commit", "-q", "-m", "first commit");
     writeFileSync(join(root, "stryker-floor.json"), floors);
     git(root, "add", "-A");
-    git(root, "commit", "-q", "-m", "chore: import @onryde/seazn-engine");
+    git(root, "commit", "-q", "-m", "chore: import @seazn-club/seazn-engine");
     return root;
   }
 

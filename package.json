@@ -1,12 +1,12 @@
 {
-  "name": "@onryde/seazn-engine",
+  "name": "@seazn-club/seazn-engine",
   "version": "10.0.1",
   "type": "module",
   "description": "Pure tournament engine for seazn.club — zero effectful deps (design corpus: engine/).",
   "license": "SEE LICENSE IN LICENSE.md",
   "repository": {
     "type": "git",
-    "url": "https://github.com/onryde/seazn.club.engine"
+    "url": "https://github.com/seazn-club/seazn.club.engine"
   },
   "packageManager": "pnpm@10.34.5",
   "exports": {

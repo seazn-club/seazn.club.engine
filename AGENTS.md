@@ -1,34 +1,34 @@
-# @onryde/seazn-engine
+# @seazn-club/seazn-engine
 
 The Seazn scoring and competition engine: sport modules, the event fold, scheduling, standings and the testkit. Published
-to GitHub Packages as `@onryde/seazn-engine`; onryde/seazn.club installs it under the alias `@seazn/engine`.
+to GitHub Packages as `@seazn-club/seazn-engine`; seazn-club/seazn.club installs it under the alias `@seazn/engine`.
 
 ## History
 
 This repository starts at one import commit. Everything before it, with blame, PR numbers and reviews, is
-`packages/engine` in onryde/seazn.club at `5a67fbf37d25675c683bbc91785bba5bacd93714` (tag `engine-split-base`). That
+`packages/engine` in seazn-club/seazn.club at `5a67fbf37d25675c683bbc91785bba5bacd93714` (tag `engine-split-base`). That
 repository is never rewritten (engine-split design D22), so `git log` / `git blame` there are the record for any line
-older than the import. Design of record: onryde/seazn.club `docs/superpowers/specs/2026-10-13-engine-split-design.md`
+older than the import. Design of record: seazn-club/seazn.club `docs/superpowers/specs/2026-10-13-engine-split-design.md`
 (§7 the cutover, §8 versioning, §9 the dev loop, §10 CI).
 
 ## Registry auth (D18)
 
-`.npmrc` here holds only the scope line (`@onryde:registry=https://npm.pkg.github.com`). Local installs that need an
-`@onryde` package authenticate with a personal token scoped `read:packages`, kept in your own `~/.npmrc`
+`.npmrc` here holds only the scope line (`@seazn-club:registry=https://npm.pkg.github.com`). Local installs that need an
+`@seazn-club` package authenticate with a personal token scoped `read:packages`, kept in your own `~/.npmrc`
 (`//npm.pkg.github.com/:_authToken=<token>`). The token lives only there: never in a repo file, a commit, a log line or
 a command's argv. CI uses `GITHUB_TOKEN`. Only release.yml's two publishing jobs (`release` and `snapshot`) hold
 `packages: write`, and only their registry steps see it as `NODE_AUTH_TOKEN`.
 
 ## The dev loop (design §9, D17)
 
-1. **Local.** In the onryde/seazn.club checkout, add an UNCOMMITTED `pnpm.overrides` entry
+1. **Local.** In the seazn-club/seazn.club checkout, add an UNCOMMITTED `pnpm.overrides` entry
    `"@seazn/engine": "link:../seazn.club.engine"` and keep `tsc --watch` running here. App CI fails any committed
    `link:` or `file:` engine spec, so the override stays in your working tree.
 2. **Paired PRs are the unit of review.** The engine PR publishes `0.0.0-pr<N>.<sha>`; the app PR pins that exact
    version and carries the matrix rows, contract tests and any web change. Each PR links the other. Merge order: engine
    PR, then the owner merges a release PR (Releasing, below), then the app PR repins to the release and merges.
 3. **Every engine PR body has a `Matrix rows:` line** naming the format × sport rows the change touches
-   (onryde/seazn.club `docs/superpowers/TEST-STRATEGY.md` rule 9). The engine PR declares them; the paired app PR runs
+   (seazn-club/seazn.club `docs/superpowers/TEST-STRATEGY.md` rule 9). The engine PR declares them; the paired app PR runs
    them.
 
 ## Releasing (D16, §8)

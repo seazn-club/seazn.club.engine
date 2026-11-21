@@ -11,7 +11,7 @@ name: Release
 #   entry, then the epoch report).
 # - `snapshot`, on a pull request from a branch of THIS repository: publishes 0.0.0-pr<N>.<sha> under the dist-tag `pr`, where <sha> is the
 #   full sha of the merge commit the job checked out (`{tag}.{commit}`, .changeset/config.json). ci.yml's `downstream` job waits for that
-#   version and installs it into onryde/seazn.club@main. A fork's PR gets no snapshot: its token cannot write packages, and its code must not
+#   version and installs it into seazn-club/seazn.club@main. A fork's PR gets no snapshot: its token cannot write packages, and its code must not
 #   run with one that can.
 #
 # Both publish with `pnpm publish` (reverse inventory C-j): pnpm packs with publishConfig applied, so the tarball's `exports` name dist/;
@@ -45,7 +45,7 @@ jobs:
       contents: write
       packages: write
     # NODE_AUTH_TOKEN is on the steps that reach GitHub Packages, never the job (Batch E review m8): the install, the build and the third-party
-    # actions run without it. setup-node's registry-url writes an .npmrc (NPM_CONFIG_USERCONFIG) that sends @onryde/* to GitHub Packages with
+    # actions run without it. setup-node's registry-url writes an .npmrc (NPM_CONFIG_USERCONFIG) that sends @seazn-club/* to GitHub Packages with
     # $NODE_AUTH_TOKEN, and exports a placeholder for it to every later step; a step's own `env:` replaces that placeholder for that step alone.
     steps:
       - uses: actions/checkout@v5
@@ -78,14 +78,14 @@ jobs:
           node-version: 26
           cache: pnpm
           registry-url: https://npm.pkg.github.com
-          scope: '@onryde'
+          scope: '@seazn-club'
       - if: steps.pending.outputs.pending == 'false'
         run: pnpm install --frozen-lockfile
-      # Release-time WARNING (owner-approved 2026-10-15, moved here from onryde/seazn.club's prod.yml: false premise 6, Deviation d): which
+      # Release-time WARNING (owner-approved 2026-10-15, moved here from seazn-club/seazn.club's prod.yml: false premise 6, Deviation d): which
       # sports does this release lock out for older capture apps? The server refuses a score write from an app whose FOLD_EPOCH for the sport
       # is lower than the engine's (426 ENGINE_OUTDATED). scripts/release-epoch-report.ts names each sport whose epoch rose since the
       # baseline: the last v*.*.* tag, or, before the first release, the import commit (the first commit holding src/sport/fold-epoch.ts: the
-      # engine as it left onryde/seazn.club). The report goes in the GitHub Release (the tag step below) and this run's summary. It informs
+      # engine as it left seazn-club/seazn.club). The report goes in the GitHub Release (the tag step below) and this run's summary. It informs
       # and never gates: continue-on-error, a timeout, and a script that exits 0 for every table and ref it reads.
       - name: Report FOLD_EPOCH bumps since the last release (non-blocking)
         id: epoch
@@ -107,7 +107,7 @@ jobs:
               echo "file=$report" >> "$GITHUB_OUTPUT"
               exit 0
             fi
-            printf 'No earlier v*.*.* release: the baseline is the import commit %s, the engine as it left onryde/seazn.club.\n\n' "$from" > "$report"
+            printf 'No earlier v*.*.* release: the baseline is the import commit %s, the engine as it left seazn-club/seazn.club.\n\n' "$from" > "$report"
           fi
           node --experimental-strip-types scripts/release-epoch-report.ts --from "$from" --to HEAD --annotate --summary "$report"
           cat "$report" >> "$GITHUB_STEP_SUMMARY"
@@ -194,7 +194,7 @@ jobs:
           node-version: 26
           cache: pnpm
           registry-url: https://npm.pkg.github.com
-          scope: '@onryde'
+          scope: '@seazn-club'
       - run: pnpm install --frozen-lockfile
       - run: pnpm changeset version --snapshot pr${{ github.event.number }}
       # Only a snapshot version is ever published from a PR, and only one `downstream` will find: 0.0.0-pr<N>.<7 to 40 hex>, the hex a prefix
