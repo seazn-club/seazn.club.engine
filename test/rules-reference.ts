@@ -68,8 +68,7 @@ export const AWAITING_PROOF: ReadonlyMap<string, string> = new Map<string, strin
   // W5's rows (design 2026-11-05-format-matrix-w5-round-robin-design.md §12, rulebook-W5-round-robin.md; signed by seazn.club `_INDEX` rulings
   // 276-291, recorded ahead of the code on ruling 285's "approve and record all rules", 274's pattern): the value names the W5 PR whose test proves
   // the row: the engine PR, app PR A or app PR B. The proving commit deletes the entry, fills `proved by` and drops the row's
-  // "not yet implemented" citation note; every W5 entry is to be gone by the W5 close-out.
-  ["X-QS-2", "W5 app PR B"], ["X-ADJ-4", "W5 app PR B"], ["X-ADJ-5", "W5 app PR B"],
+  // "not yet implemented" citation note. The W5 close-out deleted the last three (app PR B's X-QS-2, X-ADJ-4, X-ADJ-5): no W5 entry remains.
 ]);
 
 /** Rule rows write every engine path as `packages/engine/...`, in the monorepo and in the engine's own repo alike: the prefix is
