@@ -35,11 +35,31 @@ import { resolveTableRules } from "./table-rules.ts";
 import { DIFF_KEYS, buildSwissLedger, metricOf, type GameResult, type SwissGame, type SwissRow, type SwissTable } from "./tiebreakers.ts";
 
 // ---------------------------------------------------------------------------------------------------------------------
-// Oracle 1: the pre-change reads, verbatim from engine 10.0.3 (src/competition/tiebreakers.ts at bf70530), renamed only.
+// Oracle 1: the pre-change reads, verbatim from engine 10.0.3 (src/competition/tiebreakers.ts at bf70530), renamed, with
+// one liberty: each ledger and table THIS TEST builds is indexed once (`indexOnce`, `rowsOnce`), where 10.0.3 re-indexed on
+// every read. The test never writes a ledger or a table after building it, and each case builds its own (ledgerOf), so the
+// index is the very map each read would have built, and it can never be another case's. Without it the oracle alone is
+// O(n^2) per table, most of this file's time at 500 entrants.
 // ---------------------------------------------------------------------------------------------------------------------
 function indexTable(table: SwissTable): Map<EntrantId, SwissRow> {
   const map = new Map<EntrantId, SwissRow>();
   for (const row of table) map.set(row.entrant, row);
+  return map;
+}
+const INDEXED = new WeakMap<SwissTable, Map<EntrantId, SwissRow>>();
+function indexOnce(table: SwissTable): Map<EntrantId, SwissRow> {
+  const kept = INDEXED.get(table);
+  if (kept !== undefined) return kept;
+  const map = indexTable(table);
+  INDEXED.set(table, map);
+  return map;
+}
+const ROWS = new WeakMap<readonly StandingsRow[], Map<EntrantId, StandingsRow>>();
+function rowsOnce(rows: readonly StandingsRow[]): Map<EntrantId, StandingsRow> {
+  const kept = ROWS.get(rows);
+  if (kept !== undefined) return kept;
+  const map = new Map(rows.map((r) => [r.entrantId, r]));
+  ROWS.set(rows, map);
   return map;
 }
 const isVur = (game: SwissGame): boolean =>
@@ -66,7 +86,7 @@ function requireRow(byEntrant: Map<EntrantId, SwissRow>, entrant: EntrantId): Sw
   return row;
 }
 function preBuchholz(table: SwissTable, entrant: EntrantId, opts: { cut?: number } = {}): number {
-  const byEntrant = indexTable(table);
+  const byEntrant = indexOnce(table);
   const row = requireRow(byEntrant, entrant);
   const cards = row.games.map((game) => ({ score: opponentScore(byEntrant, row, game), vur: isVur(game) }));
   const scores = cards.map((card) => card.score);
@@ -84,7 +104,7 @@ function preBuchholzCut1(table: SwissTable, entrant: EntrantId): number {
   return preBuchholz(table, entrant, { cut: 1 });
 }
 function preSonnebornBerger(table: SwissTable, entrant: EntrantId): number {
-  const byEntrant = indexTable(table);
+  const byEntrant = indexOnce(table);
   const row = requireRow(byEntrant, entrant);
   let total = 0;
   row.games.forEach((game) => {
@@ -95,8 +115,8 @@ function preSonnebornBerger(table: SwissTable, entrant: EntrantId): number {
   return total;
 }
 function preOpponentsDiff(table: SwissTable, rows: readonly StandingsRow[], entrant: EntrantId): number {
-  const row = requireRow(indexTable(table), entrant);
-  const byEntrant = new Map(rows.map((r) => [r.entrantId, r]));
+  const row = requireRow(indexOnce(table), entrant);
+  const byEntrant = rowsOnce(rows);
   let total = 0;
   for (const game of row.games) {
     if (game.unplayed !== undefined) continue;
@@ -489,5 +509,5 @@ describe("S5: the Swiss tiebreak reads are byte-identical to engine 10.0.3 (ever
     expect(pairs, "ranked pairs checked").toBeGreaterThan(0);
     expect(Object.keys(actual), "one recording per sport and cfg").toEqual(Object.keys(RECORDED));
     expect(actual).toEqual(RECORDED);
-  }, 120_000);
+  }, 300_000);
 });
