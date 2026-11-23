@@ -448,7 +448,8 @@ const DROP_CYCLE: ReadonlyArray<(i: number, h: number) => number> = [
 // c = (r−2) mod 4 = m mod 4), in a drop round of `games` games. Rulebook
 // 1-based `WB r.i` → LB game p is this function at (r−2, G, i−1) + 1.
 export function lbDropGameRB6X2(m: number, games: number, i: number): number {
-  const powerOfTwo = Number.isInteger(games) && games >= 1 && (games & (games - 1)) === 0;
+  // games ≥ 1 needs no term of its own: 0 ≤ i < games already implies it.
+  const powerOfTwo = Number.isInteger(games) && (games & (games - 1)) === 0;
   if (!Number.isInteger(m) || m < 0 || !powerOfTwo || !Number.isInteger(i) || i < 0 || i >= games) {
     throw new EngineError("CONFIG_INVALID", "a losers'-bracket drop needs m ≥ 0, a power-of-two game count and i in range", {
       reason: "drop_game_invalid",
@@ -486,7 +487,7 @@ export function generateDoubleElim(opts: DoubleElimOptions): GeneratedBracket {
   const lbRounds = 2 * (k - 1);
 
   if (lbRounds >= 1) {
-    // LB round 0 (minor): pairs adjacent WB round-0 losers.
+    // LB round 1, engine round 0 (RB6-X1): pairs adjacent WB round-1 losers in order.
     lbGameIds[0] = [];
     for (let i = 0; i < size / 4; i++) {
       const id = `lb-r0-i${i}`;
@@ -522,7 +523,7 @@ export function generateDoubleElim(opts: DoubleElimOptions): GeneratedBracket {
           (lbGameIds[L] as string[]).push(id);
         }
       } else {
-        // Minor: winner(prev[2i]) vs winner(prev[2i+1]).
+        // Survivor round (RB6-X3): winner(prev[2i]) vs winner(prev[2i+1]).
         for (let i = 0; i < prev.length / 2; i++) {
           const id = `lb-r${L}-i${i}`;
           fixtures.push({

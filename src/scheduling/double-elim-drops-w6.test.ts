@@ -63,14 +63,19 @@ describe("double elimination structure (W6 X-DE-2)", () => {
         }
       }
       // RB6-D4: an entrant is out at the second loss. A WB loser (a first loss) feeds exactly one later seat; an LB
-      // loser (a second loss) feeds none; the grand final's loser feeds only the conditional reset.
-      const feeds = fixtures.flatMap((f) => [f.homeFrom, f.awayFrom]).filter((s): s is BracketSlotRef => s !== undefined);
+      // loser (a second loss) feeds none; with the reset on, the grand final's loser feeds only the conditional reset.
+      const withReset = generateDoubleElim({ entrants: field(n), bracketReset: true }).fixtures;
+      const seats: Array<[string, BracketSlotRef]> = withReset.flatMap((f) =>
+        [f.homeFrom, f.awayFrom].filter((s): s is BracketSlotRef => s !== undefined).map((s): [string, BracketSlotRef] => [f.id, s]),
+      );
+      const feeds = seats.map(([, s]) => s);
       const lbIds = new Set(lb.map((f) => f.id));
       expect(feeds.filter((s) => s.side === "loser" && lbIds.has(s.fixtureId))).toEqual([]);
       for (const w of wb) {
         const takers = feeds.filter((s) => s.side === "loser" && s.fixtureId === w.id).length;
         expect(takers, w.id).toBe(1); // a bye's loser seat is wired too (RB6-X5: the frame)
       }
+      expect(seats.filter(([, s]) => s.side === "loser" && s.fixtureId === "gf").map(([id]) => id)).toEqual(["gf-reset"]);
       sizes++;
     }
     expect(sizes).toBe(31);
@@ -123,6 +128,54 @@ describe("losers' bracket drops cross (W6 X-DE-4)", () => {
       checked++;
     }
     expect(checked).toBe(11);
+  });
+
+  it("X-DE-4 the generator walks the whole cycle on 32, 64 and 128", () => {
+    // Named games, worked by hand from RB6-X2 and §4's "Which order each size uses" (r = WB round, G its game count):
+    // [frame, LB game, the WB game whose loser it takes].
+    const named: Array<[number, string, string]> = [
+      // 32, r=2, G=8, c=0 reversed: WB 2.1 → LB 2.8, WB 2.8 → LB 2.1
+      [32, "lb-r1-i7", "wb-r1-i0"], [32, "lb-r1-i0", "wb-r1-i7"],
+      // 32, r=3, G=4, c=1 reversed then switched: WB 3.1→2, 3.2→1, 3.3→4, 3.4→3
+      [32, "lb-r3-i0", "wb-r2-i1"], [32, "lb-r3-i1", "wb-r2-i0"], [32, "lb-r3-i2", "wb-r2-i3"], [32, "lb-r3-i3", "wb-r2-i2"],
+      // 32, r=4, G=2, c=2 switched (two games: a swap): WB 4.1 → LB 6.2, WB 4.2 → LB 6.1
+      [32, "lb-r5-i0", "wb-r3-i1"], [32, "lb-r5-i1", "wb-r3-i0"],
+      // 32, r=5, G=1: the WB final's loser lands in the one-game LB final
+      [32, "lb-r7-i0", "wb-r4-i0"],
+      // 64, r=3, G=8, c=1: WB 3.4 → LB 4.1, 3.1 → 4.4, 3.8 → 4.5, 3.5 → 4.8
+      [64, "lb-r3-i0", "wb-r2-i3"], [64, "lb-r3-i3", "wb-r2-i0"], [64, "lb-r3-i4", "wb-r2-i7"], [64, "lb-r3-i7", "wb-r2-i4"],
+      // 64, r=4, G=4, c=2 switched: WB 4.3 → LB 6.1, 4.4 → 6.2, 4.1 → 6.3, 4.2 → 6.4
+      [64, "lb-r5-i0", "wb-r3-i2"], [64, "lb-r5-i1", "wb-r3-i3"], [64, "lb-r5-i2", "wb-r3-i0"], [64, "lb-r5-i3", "wb-r3-i1"],
+      // 64, r=5, G=2, c=3 regular
+      [64, "lb-r7-i0", "wb-r4-i0"], [64, "lb-r7-i1", "wb-r4-i1"],
+      // 64, r=6, G=1
+      [64, "lb-r9-i0", "wb-r5-i0"],
+      // 128, r=5, G=4, c=3 regular: WB 5.3 → LB 8.3
+      [128, "lb-r7-i2", "wb-r4-i2"],
+      // 128, r=6, G=2, c=0 again (the cycle wraps): reversed, WB 6.1 → LB 10.2
+      [128, "lb-r9-i0", "wb-r5-i1"], [128, "lb-r9-i1", "wb-r5-i0"],
+      // 128, r=7, G=1
+      [128, "lb-r11-i0", "wb-r6-i0"],
+    ];
+    const frames = new Map([32, 64, 128].map((f) => [f, byId(generateDoubleElim({ entrants: field(f) }).fixtures)]));
+    for (const [frame, lbId, wbId] of named) {
+      expect(frames.get(frame)?.get(lbId)?.awayFrom, `${frame} ${lbId}`).toEqual(L(wbId));
+    }
+    expect(named.length).toBe(24);
+    // And every drop game of those frames against the test's own 1-based RB6-X2 (rb6x2), never the engine's index.
+    let drops = 0;
+    for (const [frame, fx] of frames) {
+      const k = frameDepth(frame);
+      for (let r = 2; r <= k; r++) {
+        const G = 2 ** (k - r);
+        for (let i = 0; i < G; i++) {
+          const p = rb6x2((r - 2) % 4, G, i);
+          expect(fx.get(`lb-r${2 * r - 3}-i${p}`)?.awayFrom, `${frame} WB ${r}.${i + 1}`).toEqual(L(`wb-r${r - 1}-i${i}`));
+          drops++;
+        }
+      }
+    }
+    expect(drops).toBe(15 + 31 + 63);
   });
 
   it("X-DE-4 the four steps of the cycle, by the rule's own formula", () => {
@@ -234,11 +287,14 @@ describe("losers' bracket drops cross (W6 X-DE-4)", () => {
       [0, 4, 4], // i = games
       [-1, 4, 0], // m below 0
       [0.5, 4, 0], // m not an integer
+      [0, 4, 0.5], // i not an integer
+      [0, 2.5, 0], // games not an integer (2.5 & 1.5 is 0, so the power-of-two test alone would pass it)
+      [0, 0, 0], // games below 1: refused by the i range, which is why games ≥ 1 has no term of its own
     ];
     for (const [m, games, i] of bad) {
       expect(refusal(m, games, i)).toEqual({ code: "CONFIG_INVALID", data: { reason: "drop_game_invalid", m, games, i } });
     }
-    expect(bad.length).toBe(5);
+    expect(bad.length).toBe(8);
     expect(refusal(0, 4, 3)).toBe("answered");
   });
 
@@ -290,5 +346,11 @@ describe("survivor rounds and the grand final (W6 X-DE-5)", () => {
     const plain = lbFeeds() as unknown[];
     expect(plain.length).toBe(14 + 1);
     expect(lbFeeds(reversed)).toEqual(plain);
+    // The positive pair: the seed map really moves the winners'-bracket draw, so "moves no LB feed" is not vacuous.
+    const wbSeats = (seeds?: ReadonlyMap<string, number>): unknown =>
+      generateDoubleElim({ entrants: field(16), ...(seeds === undefined ? {} : { seeds }) })
+        .fixtures.filter((f) => f.id.startsWith("wb-r0-"))
+        .map((f) => [f.home, f.away]);
+    expect(wbSeats(reversed)).not.toEqual(wbSeats());
   });
 });
