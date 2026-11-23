@@ -74,6 +74,9 @@ export const AWAITING_PROOF: ReadonlyMap<string, string> = new Map<string, strin
   // PR whose test proves the row: the engine PR, or app PR B. A row whose proving test app PR A writes waits on app PR B too, because that test
   // gains the row's id in its title only at PR B's engine bump (design §12 step 1). The proving commit deletes the entry, fills `proved by` and
   // drops the row's "not yet implemented" citation note; the W6 close-out (a docs-only engine PR after app PR B) deletes the app PR B entries.
+  // The seven rows whose code is PR A's (X-DE-7, X-DE-8, X-LE-15, X-LE-16, X-LE-17, X-RB-2, X-TP-8) name both PRs: "not yet implemented
+  // (W6 app PR A); proof owed (W6 app PR B)". Once PR A merges the first half goes (at the engine PR's T8 if PR A is in by then); the
+  // close-out drops the rest.
   // One entry per line, so a line count is the entry count.
   ["X-DE-2", "W6 engine PR"],
   ["X-DE-3", "W6 engine PR"],
