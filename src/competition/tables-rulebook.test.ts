@@ -360,7 +360,8 @@ const BOOK: Readonly<Record<string, Book>> = {
         // Step 1 among the four: A 9 → first; B, C, D 3 points, GD −3, goals 3 each. Step 2 among B, C, D: 3 points each, GD
         // C +1, D +1, B −2 → B last; C, D level on goals (3). Repeated on C, D alone: C beat D 2-0 → C (h2h_points). FIFA's
         // single re-application stops there and d) decides: overall GD D +3, C −1 → D. Reachable only with four or more
-        // level in a table of five or more: in a group of four the pair's results against the rest cannot leave all four level.
+        // level in a table of five or more teams, or a double round-robin: in a single round-robin group of four the pair's
+        // results against the rest cannot leave all four level.
         // O1, O2 0 points, never met, GD −5 and no goals each → the stored draw O1, O2.
         matches: [
           fb("A", "B", 2, 1), fb("A", "C", 4, 0), fb("A", "D", 4, 0), fb("C", "D", 2, 0), fb("B", "C", 2, 1), fb("D", "B", 3, 0),
