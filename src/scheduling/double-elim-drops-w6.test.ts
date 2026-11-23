@@ -250,7 +250,7 @@ describe("losers' bracket drops cross (W6 X-DE-4)", () => {
     expect(seats).toBe(2 * (2 + 6 + 14 + 30 + 62));
   });
 
-  it("X-DE-4 byes do not move a drop", () => {
+  it("X-DE-4 X-DE-6 byes do not move a drop: the pattern is defined on the frame", () => {
     // RB6-X5: the pattern is defined on the frame; byes change which seats are live, never where a loser lands.
     const feedsOf = (n: number): Map<string, [BracketSlotRef | undefined, BracketSlotRef | undefined]> =>
       new Map(

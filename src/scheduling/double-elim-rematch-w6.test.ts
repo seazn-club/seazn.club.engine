@@ -62,8 +62,7 @@ interface Played {
 
 const pairKey = (a: string, b: string): string => [a, b].sort((x, y) => strength(x) - strength(y)).join(" v ");
 
-function play(n: number, draw: Draw, pick: Pick): Played {
-  const gen = generateDoubleElim({ entrants: field(n), seeds: seedsFor(n, draw) });
+function play(n: number, draw: Draw, pick: Pick, gen = generateDoubleElim({ entrants: field(n), seeds: seedsFor(n, draw) })): Played {
   const rows = playOutBracket(gen, { winner: pick });
   const met = new Set<string>(); // every pair that has met in a real match so far, WB or LB, in play order
   const rematches: Rematch[] = [];
@@ -131,6 +130,36 @@ describe("double elimination losers'-bracket rematches (W6 X-DE-6)", () => {
     expect(rematches).toBeGreaterThan(0); // the sweep can see a rematch at all
     sweepRuns += runs;
   });
+
+  it("X-DE-6 whatever the results, exhaustively for n = 3 … 8: every result vector on both draws meets the bound", () => {
+    // RB6-X6 "on any results", made literal where it is affordable: each of the 2n − 3 WB and LB matches (RB6-D4:
+    // n − 1 WB, n − 2 LB) is decided by one bit of the vector, home on 0, away on 1. The player walks the generator's
+    // order (every WB row, then LB, then GF), so the first 2n − 3 picks are exactly those matches; GF1 and the reset
+    // come after and are outside the property (RB6-X8), so they take home. The sampled sweep above covers 9 … 32.
+    let vectors = 0;
+    let rematches = 0;
+    for (let n = 3; n <= 8; n++) {
+      const bound = E[nextPowerOfTwo(n)] as number;
+      const matches = 2 * n - 3;
+      for (const draw of DRAWS) {
+        const gen = generateDoubleElim({ entrants: field(n), seeds: seedsFor(n, draw) });
+        for (let v = 0; v < 2 ** matches; v++) {
+          let picks = 0;
+          const pick: Pick = (h, a) => (picks < matches && ((v >> picks++) & 1) === 1 ? a : h);
+          const run = play(n, draw, pick, gen);
+          const where = `n=${n} ${draw} vector ${v}`;
+          expect(run.lbMatches, where).toBe(n - 2);
+          expect(picks, where).toBe(matches); // every bit decided one WB or LB match, none was left unread
+          for (const r of run.rematches) expect(r.lbRound, `${where} ${r.fixtureId} ${r.pair}`).toBeGreaterThanOrEqual(bound);
+          rematches += run.rematches.length;
+          vectors++;
+        }
+      }
+    }
+    // 2 draws × Σ 2^(2n − 3), n = 3 … 8 = 2 × (8 + 32 + 128 + 512 + 2048 + 8192) = 2 × 10 920.
+    expect(vectors).toBe(21840);
+    expect(rematches).toBeGreaterThan(0);
+  }, 60_000); // 21 840 played brackets: ~1.5 s idle, past the 5 s default on a loaded machine
 
   it("X-DE-6 on a fully seeded field with the favourite winning there is exactly one rematch, the LB final, seed 3 v seed 2", () => {
     // RB6-X7: fully seeded on the fold, better seed wins every match, n ≥ 3 → exactly one LB rematch, the LB final

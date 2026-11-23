@@ -1438,8 +1438,8 @@ describe("X-FR-3 a withdrawn entrant on a dead seat loses that walkover (final r
   it("X-FR-3 a LOSER feed: in a double elimination, a winners'-bracket loser who withdrew before their losers'-bracket fixture is out there", () => {
     // 8-entrant double elimination (no reset), to seed, except: E5 lost wb-r0-i1 to E4 by play, then withdrew while
     // wb-r0-i0 (E1 v E8) was still to play. Its lb-r0-i0 seat (fed by wb-r0-i1's LOSER) is dead, and E8, arriving,
-    // walks over it; E4 then beats E8 in lb-r1-i0. RB4-R3: E5 is out at lb-r0-i0 (round 3), as E7 is (lost lb-r0-i1 by
-    // play). Rank places, "double_elim: strict 1 … n", X-FR-2 below the final: elimination round (later first), then seed:
+    // walks over it; E3 then beats E8 in lb-r1-i0 (E4 drops to lb-r1-i1, RB6-X2). RB4-R3: E5 is out at lb-r0-i0
+    // (round 3), as E7 is (lost lb-r0-i1 by play). Rank places, "double_elim: strict 1 … n", X-FR-2 below the final: elimination round (later first), then seed:
     // E1 (GF winner), E2 (GF loser), E3 (out round 6), E4 (5), E6 and E8 (4, seed order), E5 and E7 (3, seed order).
     // differential: today E5 is out at its last LOSS, the winners'-bracket round 0, so last — below E7.
     const entrants = ids(8);
