@@ -13,11 +13,11 @@
 //   - `jointFinal`: the final, both sides seated, is decided with no winner — `jointWinners: true` (Q4, X-CH-1) — so a
 //     double-elimination bracket reset after it has no one to seat and is void;
 //   - a fixture with one seat dead is a walkover to the side present (no loser); with both dead it is void;
-//   - a double-elim bracket reset (`conditional`) is played only when the losers'-bracket champion won the grand final,
-//     and voided otherwise (spec 05 §2.4);
+//   - a double-elim bracket reset (`conditional`) is played only when it is owed (`resetOwed`, the one reading: the
+//     losers'-bracket champion won the grand final, X-DE-11), and voided otherwise (spec 05 §2.4, RB6-G6);
 //   - otherwise it is decided by `winner(home, away)`, by default the better seed (the lower seed number; home on a tie).
 import type { EntrantId } from "../core/types.ts";
-import type { BracketFixture } from "../competition/stage.ts";
+import { resetOwed, type BracketFixture } from "../competition/stage.ts";
 import type { BracketSlotRef, GeneratedBracket } from "../scheduling/bracket.ts";
 
 export interface PlayOutOptions {
@@ -40,6 +40,10 @@ export function playOutBracket(gen: GeneratedBracket, opts: PlayOutOptions = {})
   const winnerOf = opts.winner ?? ((home: EntrantId, away: EntrantId): EntrantId => (seedOf(away) < seedOf(home) ? away : home));
   const byId = new Map<string, BracketFixture>();
   const rows: BracketFixture[] = [];
+  const feedsOf = (g: GeneratedBracket["fixtures"][number]): Pick<BracketFixture, "homeFrom" | "awayFrom"> => ({
+    ...(g.homeFrom === undefined ? {} : { homeFrom: g.homeFrom }),
+    ...(g.awayFrom === undefined ? {} : { awayFrom: g.awayFrom }),
+  });
 
   const feed = (ref: BracketSlotRef | undefined): EntrantId | undefined => {
     if (ref === undefined) return undefined;
@@ -64,10 +68,11 @@ export function playOutBracket(gen: GeneratedBracket, opts: PlayOutOptions = {})
       status: "scheduled",
     };
     let row: BracketFixture;
-    const resetNotNeeded = g.conditional === true && (() => {
-      const gf = g.homeFrom === undefined ? undefined : byId.get(g.homeFrom.fixtureId);
-      return gf?.winner !== undefined && gf.winner === gf.home;
-    })();
+    // `resetOwed` reads the rows played so far with the generator's feeds attached (the returned rows carry none); row
+    // i is gen.fixtures[i], one row per generated fixture.
+    const resetNotNeeded =
+      g.conditional === true &&
+      !resetOwed([...rows.map((played, i) => ({ ...played, ...feedsOf(gen.fixtures[i] as typeof g) })), { ...base, ...feedsOf(g), conditional: true }]);
     const forfeiter = opts.forfeit?.get(g.id);
     const present = home ?? away; // the one side seated, when only one is
     if (g.award !== undefined) {

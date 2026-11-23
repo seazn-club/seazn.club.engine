@@ -82,6 +82,10 @@ export interface BracketFixture {
   /** W4 (Q4; RB4-C3; X-CH-1): the final ended in joint winners — decided, with no `winner`, no `loser` and no
    *  `walkedOver`: both its seated sides rank 1st. Only ever on the final (`isFinal`); anything else is a wiring bug. */
   jointWinners?: boolean;
+  /** W6 (X-DE-11, ruling 298): the double-elimination grand-final reset — on that one row only, as the generator marks
+   *  it (`BracketFixtureGen.conditional`). It and GF1 must carry their feeds, and GF1's two source rows their `bracket`:
+   *  `resetOwed` reads whether it is owed from them. Absent on every row = no reset to read, as before W6. */
+  conditional?: boolean;
   /** W4 (final review I1/I2; controller ruling F-I1/I2): the fixture whose winner — or loser — fills this side's seat, as
    *  the generator wires it (`BracketFixtureGen.homeFrom` / `awayFrom`). The app must pass it on dead-seat rows: a side
    *  that withdrew before its opponent was known left its seat empty and stamped dead (X-WD-3, ruling 116), and only the
@@ -272,18 +276,24 @@ export function undecidedBracketFixtures(fixtures: readonly BracketFixture[]): s
   return fixtures.filter((fixture) => !SETTLED.has(fixture.status)).map((fixture) => fixture.id);
 }
 
-/** Why a bracket stage cannot complete yet (X-CH-7), or null when it can. */
-type BracketCompletionRefusal = { reason: "no_final" } | { reason: "fixtures_undecided"; undecided: string[] };
+/** Why a bracket stage cannot complete yet (X-CH-7, X-DE-12), or null when it can. */
+type BracketCompletionRefusal =
+  | { reason: "no_final" }
+  | { reason: "fixtures_undecided"; undecided: string[] }
+  | { reason: "reset_owed"; reset: string; grandFinal: string };
 
 // Every bracket kind (knockout, double_elim, stepladder, page_playoff): the stage has a final, and EVERY fixture is
 // settled — the final, every earlier round, a third-place play-off (X-TP-4, RB4-T3) and a double-elim bracket reset alike
 // (X-CH-7, ruling 274, RB4-C7). The final alone is not enough: a semi-final still scheduled (CH-1) or a final still
-// in_play (AN-2) leaves the stage open. A voided reset and a walked-over line are settled. No final is checked first:
-// an empty list owes no fixture and would otherwise pass. The one reading of both the predicate and the refusal.
+// in_play (AN-2) leaves the stage open. A walked-over line is settled, and so is a void reset that is not owed (it does
+// not exist, RB6-G6); a void reset the LB champion earned is not (X-DE-12, ruling 298, RB6-G7). No final is checked
+// first: an empty list owes no fixture and would otherwise pass. The one reading of both the predicate and the refusal.
 function bracketCompletionRefusal(fixtures: readonly BracketFixture[]): BracketCompletionRefusal | null {
   if (!fixtures.some((fixture) => fixture.isFinal === true)) return { reason: "no_final" };
   const undecided = undecidedBracketFixtures(fixtures);
-  return undecided.length > 0 ? { reason: "fixtures_undecided", undecided } : null;
+  if (undecided.length > 0) return { reason: "fixtures_undecided", undecided };
+  const voided = voidOwedReset(fixtures);
+  return voided === undefined ? null : { reason: "reset_owed", ...voided };
 }
 
 export function isBracketStageComplete(
@@ -291,6 +301,58 @@ export function isBracketStageComplete(
   fixtures: readonly BracketFixture[],
 ): boolean {
   return bracketCompletionRefusal(fixtures) === null;
+}
+
+/** W6 (X-DE-11; rulings 293, 298; RB6-G11): whether the double-elimination grand-final reset is owed — the one answer
+ *  every reader takes (completion, the title, the app's reset row). False when no fixture is `conditional`. Otherwise,
+ *  with RESET the conditional row and GF1 the fixture both its feeds name: true iff GF1 carries no `walkedOver`, names a
+ *  winner and a loser, its winner is the entrant GF1's LB feed delivered and its loser the one its WB feed delivered.
+ *  GF1's WB feed is its one feed with side "winner" from a row with bracket "WB"; the other is its LB feed (the LB final's
+ *  winner; at n = 2 the WB final's loser). Seat order is never read (RB6-D6). The rows are read AS GIVEN, never through
+ *  `resolveDeadSeats`. Pure: it reads the rows and changes none.
+ *  CONFIG_INVALID (a wiring bug), whenever a conditional row exists: "reset_not_unique" (two conditional rows);
+ *  "reset_feed_invalid" { fixtureId } (RESET lacks a feed, or its feeds are not one winner and one loser of one listed
+ *  fixture); "grand_final_feed_invalid" { fixtureId } (GF1 lacks a feed, a feed names no listed row, or not exactly one
+ *  feed is a WB winner feed). */
+export function resetOwed(fixtures: readonly BracketFixture[]): boolean {
+  return resetReading(fixtures)?.owed === true;
+}
+
+// The reset and GF1 as `resetOwed` reads them, or undefined when no row is conditional. The single implementation.
+function resetReading(fixtures: readonly BracketFixture[]): { reset: BracketFixture; grandFinal: BracketFixture; owed: boolean } | undefined {
+  const conditional = fixtures.filter((fixture) => fixture.conditional === true);
+  const reset = conditional[0];
+  if (reset === undefined) return undefined;
+  if (conditional.length > 1) {
+    throw new EngineError("CONFIG_INVALID", `a bracket has ${conditional.length} grand-final resets`, { reason: "reset_not_unique", fixtureIds: conditional.map((f) => f.id) });
+  }
+  const byId = new Map(fixtures.map((fixture) => [fixture.id, fixture]));
+  const wiring = (reason: string, fixtureId: string): EngineError =>
+    new EngineError("CONFIG_INVALID", `bracket fixture "${fixtureId}" is not wired as a double-elimination ${reason === "reset_feed_invalid" ? "reset" : "grand final"}`, { reason, fixtureId });
+  const { homeFrom, awayFrom } = reset;
+  const grandFinal = homeFrom === undefined ? undefined : byId.get(homeFrom.fixtureId);
+  if (awayFrom === undefined || grandFinal === undefined || awayFrom.fixtureId !== grandFinal.id || awayFrom.side === homeFrom?.side) {
+    throw wiring("reset_feed_invalid", reset.id);
+  }
+  const feeds = [grandFinal.homeFrom, grandFinal.awayFrom];
+  const sources = feeds.map((ref) => (ref === undefined ? undefined : byId.get(ref.fixtureId)));
+  const wbAt = feeds.flatMap((ref, i) => (ref?.side === "winner" && sources[i]?.bracket === "WB" ? [i] : []));
+  if (sources.includes(undefined) || wbAt.length !== 1) throw wiring("grand_final_feed_invalid", grandFinal.id);
+  const delivered = (i: number): EntrantId | undefined => (feeds[i]?.side === "winner" ? sources[i]?.winner : sources[i]?.loser);
+  const wb = wbAt[0] as number;
+  const owed =
+    grandFinal.walkedOver === undefined &&
+    grandFinal.winner !== undefined &&
+    grandFinal.loser !== undefined &&
+    grandFinal.winner === delivered(1 - wb) &&
+    grandFinal.loser === delivered(wb);
+  return { reset, grandFinal, owed };
+}
+
+// The ids of an owed reset whose row is void, or undefined (X-DE-12, RB6-G7): completion refuses it and no title is read.
+function voidOwedReset(fixtures: readonly BracketFixture[]): { reset: string; grandFinal: string } | undefined {
+  const reading = resetReading(fixtures);
+  return reading?.owed === true && reading.reset.status === "void" ? { reset: reading.reset.id, grandFinal: reading.grandFinal.id } : undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -658,16 +720,19 @@ export type BracketTitle =
  *  final included (a double-elimination reset that was not needed decides nothing; the grand final before it does) —
  *  and undefined while ANY final is still unsettled (B3 fix round 1, controller ruling): a double-elimination reset
  *  seated after the grand final may yet crown the other side, so the grand final's winner is not the champion yet.
- *  Every jointWinners row is checked first, whatever the answer. */
+ *  Undefined too while the reset is owed and its row is void (X-DE-12, RB6-G7): GF1's winner has one loss and is not the
+ *  champion yet. Every jointWinners row is checked first, whatever the answer. */
 export function bracketTitle(fixtures: readonly BracketFixture[]): BracketTitle | undefined {
   const decided = decidingFinal(fixtures);
   if (fixtures.some((fixture) => fixture.isFinal === true && !SETTLED.has(fixture.status))) return undefined;
+  if (voidOwedReset(fixtures) !== undefined) return undefined;
   return decided?.title;
 }
 
 // Completing a bracket stage is refused, never ranked provisionally, until `isBracketStageComplete` holds (X-CH-7, ruling
 // 274, RB4-C7): STAGE_NOT_READY with `reason: "no_final"` when no fixture is the final, else `reason:
-// "fixtures_undecided"` naming every fixture still owed. Its ranks then pass the strict check (X-FR-1, B3-1).
+// "fixtures_undecided"` naming every fixture still owed, else `reason: "reset_owed"` naming an earned reset that is void
+// and its grand final (X-DE-12). Its ranks then pass the strict check (X-FR-1, B3-1).
 export function completeBracketStage(
   stage: BracketStage,
   fixtures: readonly BracketFixture[],
@@ -677,7 +742,9 @@ export function completeBracketStage(
     const message =
       refusal.reason === "no_final"
         ? `bracket stage "${stage.id}" has no final to complete it`
-        : `bracket stage "${stage.id}" has ${refusal.undecided.length} fixture(s) not yet decided or settled: ${refusal.undecided.join(", ")}`;
+        : refusal.reason === "fixtures_undecided"
+          ? `bracket stage "${stage.id}" has ${refusal.undecided.length} fixture(s) not yet decided or settled: ${refusal.undecided.join(", ")}`
+          : `bracket stage "${stage.id}" owes a grand-final reset ("${refusal.reset}") that is void`;
     throw new EngineError("STAGE_NOT_READY", message, { stageId: stage.id, ...refusal });
   }
   // Assumption → guard (X-CH-1): a completed bracket crowned a champion, joint winners, or left the title vacant. A final

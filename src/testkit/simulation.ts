@@ -10,6 +10,7 @@ import {
   isBracketStageComplete,
   isTableStageComplete,
   openStage,
+  resetOwed,
   type BracketFixture,
   type BracketStage,
   type CompletedTableStage,
@@ -744,6 +745,11 @@ function playBracketStage(
   const byId = new Map<string, BracketFixture>();
   const records: SimFixtureRecord[] = [];
   const bracketFixtures: BracketFixture[] = [];
+  const generatedById = new Map(generated.map((gen) => [gen.id, gen]));
+  const feedsOf = (gen: BracketFixtureGen | undefined): Pick<BracketFixture, "homeFrom" | "awayFrom"> => ({
+    ...(gen?.homeFrom === undefined ? {} : { homeFrom: gen.homeFrom }),
+    ...(gen?.awayFrom === undefined ? {} : { awayFrom: gen.awayFrom }),
+  });
 
   const resolveRef = (ref: BracketSlotRef): EntrantId | undefined => {
     const source = byId.get(ref.fixtureId);
@@ -779,15 +785,15 @@ function playBracketStage(
       ...(away === undefined ? {} : { away }),
     };
 
-    // DE bracket-reset decider: played only when the LB champion won GF1 —
-    // otherwise voided (void counts as settled for completion, spec 05 §2.4).
+    // DE bracket-reset decider: played only when it is owed (`resetOwed`, the one reading: the LB champion won GF1,
+    // X-DE-11) — otherwise voided (void counts as settled for completion, spec 05 §2.4, RB6-G6). It reads the rows
+    // played so far by their generator ids, with the generator's feeds attached.
     const skipConditional =
       gen.conditional === true &&
-      (() => {
-        const gf1 = gen.homeFrom ? byId.get(gen.homeFrom.fixtureId) : undefined;
-        // GF1 home = WB champion; if the WB champion won, no reset is needed.
-        return gf1 !== undefined && gf1.winner !== undefined && gf1.winner === gf1.home;
-      })();
+      !resetOwed([
+        ...[...byId].map(([id, row]) => ({ ...row, id, ...feedsOf(generatedById.get(id)) })),
+        { ...base, id: gen.id, ...feedsOf(gen), conditional: true },
+      ]);
 
     if (gen.award !== undefined) {
       // Bye — auto-decided at generation: the entrant is awarded through.
