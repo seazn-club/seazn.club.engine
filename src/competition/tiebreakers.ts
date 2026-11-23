@@ -109,11 +109,14 @@ function requireRow(byEntrant: Map<EntrantId, SwissRow>, entrant: EntrantId): Sw
 // Cut-`cut` drops `cut` contributions (FIDE recommends Cut-1 first) — spec 04 §6.3: each cut the lowest VUR contribution
 // left, while one is left (C.07 16.5.1), else the lowest contribution left; a Cut-k repeats it k times (16.5.2).
 export function buchholz(table: SwissTable, entrant: EntrantId, opts: { cut?: number } = {}): number {
-  const byEntrant = indexTable(table);
+  return buchholzOf(indexTable(table), entrant, opts.cut ?? 0);
+}
+
+// `buchholz` on a ledger the caller has already indexed: a rank call indexes its ledger once (`ledgerReads`).
+function buchholzOf(byEntrant: Map<EntrantId, SwissRow>, entrant: EntrantId, cut: number): number {
   const row = requireRow(byEntrant, entrant);
   const cards = row.games.map((game) => ({ score: opponentScore(byEntrant, row, game), vur: isVur(game) }));
   const scores = cards.map((card) => card.score);
-  const cut = opts.cut ?? 0;
   // Assumptions are guards (W2d A20): every caller cuts 0 or 1 lowest scores; a negative cut means nothing.
   if (cut < 0) throw new EngineError("CONFIG_INVALID", `a Buchholz cut drops opponents' scores, so it is never negative: ${cut}`, { cut });
   if (cut <= 0) return scores.reduce((sum, s) => sum + s, 0);
@@ -134,7 +137,11 @@ export function buchholzCut1(table: SwissTable, entrant: EntrantId): number {
 // against its dummy). Returned at TWICE the conventional value: a win weights the
 // contribution ×2, a draw ×1, a loss ×0.
 export function sonnebornBerger(table: SwissTable, entrant: EntrantId): number {
-  const byEntrant = indexTable(table);
+  return sonnebornBergerOf(indexTable(table), entrant);
+}
+
+// `sonnebornBerger` on a ledger the caller has already indexed (`ledgerReads`).
+function sonnebornBergerOf(byEntrant: Map<EntrantId, SwissRow>, entrant: EntrantId): number {
   const row = requireRow(byEntrant, entrant);
   let total = 0;
   row.games.forEach((game) => {
@@ -474,8 +481,12 @@ function winsOf(row: StandingsRow, ctx: RankContext): number {
  *  (the ledger and the table were built from different entrants); an opponent whose row records no goal difference (a
  *  sport with none, where `validateCascade` refuses the key, rule 2) — never read as a silent 0. */
 export function opponentsDiff(table: SwissTable, rows: readonly StandingsRow[], entrant: EntrantId): number {
-  const row = requireRow(indexTable(table), entrant);
-  const byEntrant = new Map(rows.map((r) => [r.entrantId, r]));
+  return opponentsDiffOf(indexTable(table), new Map(rows.map((r) => [r.entrantId, r])), entrant);
+}
+
+// `opponentsDiff` on a ledger and a table the caller has already indexed (`ledgerReads`).
+function opponentsDiffOf(ledger: Map<EntrantId, SwissRow>, byEntrant: ReadonlyMap<EntrantId, StandingsRow>, entrant: EntrantId): number {
+  const row = requireRow(ledger, entrant);
   let total = 0;
   for (const game of row.games) {
     if (game.unplayed !== undefined) continue;
@@ -507,9 +518,12 @@ type PlainKey = Exclude<TiebreakerKey, StructuralKey>;
 
 // What the driver threads through every step of one rank call.
 interface RunContext extends RankContext {
-  // `sberger` outside Swiss (B5): the pool's results as a Swiss ledger scored
-  // in game points. Built once per call, and only when the cascade has sberger.
-  readonly poolLedger: SwissTable | undefined;
+  // S5: the Swiss ledger's reads (`ledgerReads`), present exactly when `swiss` is.
+  readonly swissReads: LedgerReads | undefined;
+  // `sberger` outside Swiss (B5): the reads of the pool's results as a Swiss
+  // ledger scored in game points. Built once per call, and only when the cascade
+  // has sberger.
+  readonly poolReads: LedgerReads | undefined;
   // Why a conditional step left a class unsplit (anti-goal 2), by entrant.
   // A later split clears it (markTieBreak), except `h2h_incomplete`, which every
   // later trace carries until a head-to-head step answers it (`h2hAnswered`); a
@@ -520,10 +534,45 @@ interface RunContext extends RankContext {
   readonly schedule: readonly (readonly [EntrantId, EntrantId])[] | undefined;
   // W2d (IH-TB-2): `partialScheduleOrder`, parsed once per rank call.
   readonly partial: readonly PlainStep[] | undefined;
-  // W3 (`opp_diff`): the table's own rows — an opponent's final goal difference is read off its row.
-  readonly tableRows: readonly StandingsRow[];
 }
 type RunComparator = (a: StandingsRow, b: StandingsRow, run: RunContext) => number;
+
+/** S5 (W5 perf measure, 2026-11-22): one rank call's reads of one Swiss ledger, the stage's or a round robin's pool
+ *  ledger (B5). The cascade sorts each tied class by comparison, so it reads a key O(n log n) times, and every read used
+ *  to index the whole ledger again: 42-57% of the CPU of a 500-entrant Swiss refold. Here the ledger is indexed once per
+ *  rank call, and each entrant's value is computed on its first read, exactly as `buchholz`, `buchholzCut1`,
+ *  `sonnebornBerger` and `opponentsDiff` compute it, and kept for the rest of the call. That is sound because nothing
+ *  writes the ledger, or a row's goal difference (what `opp_diff` reads, W3: off the table's own rows), during a rank
+ *  call: the columns rankStandings writes are its own Swiss columns, never a `DIFF_KEYS` one. A read that throws keeps
+ *  nothing, so it throws again on its next read, as it always did. */
+interface LedgerReads {
+  readonly buchholz: (entrant: EntrantId) => number;
+  readonly buchholzCut1: (entrant: EntrantId) => number;
+  readonly sonnebornBerger: (entrant: EntrantId) => number;
+  readonly opponentsDiff: (entrant: EntrantId) => number;
+}
+
+function ledgerReads(table: SwissTable, tableRows: readonly StandingsRow[]): LedgerReads {
+  const ledger = indexTable(table);
+  const rows = new Map(tableRows.map((row) => [row.entrantId, row]));
+  return {
+    buchholz: keptByEntrant((entrant) => buchholzOf(ledger, entrant, 0)),
+    buchholzCut1: keptByEntrant((entrant) => buchholzOf(ledger, entrant, 1)),
+    sonnebornBerger: keptByEntrant((entrant) => sonnebornBergerOf(ledger, entrant)),
+    opponentsDiff: keptByEntrant((entrant) => opponentsDiffOf(ledger, rows, entrant)),
+  };
+}
+
+// Each entrant's value, computed on its first read and returned from then on.
+function keptByEntrant(read: (entrant: EntrantId) => number): (entrant: EntrantId) => number {
+  const kept = new Map<EntrantId, number>();
+  const keep = (entrant: EntrantId): number => {
+    const value = read(entrant);
+    kept.set(entrant, value);
+    return value;
+  };
+  return (entrant) => kept.get(entrant) ?? keep(entrant);
+}
 
 // spec 05 §4.1 — one comparator per non-structural TiebreakerKey.
 const COMPARATORS: Readonly<Record<PlainKey, RunComparator>> = {
@@ -544,19 +593,19 @@ const COMPARATORS: Readonly<Record<PlainKey, RunComparator>> = {
   // Carrom boards won/lost (carrom.md §4) — same cross-multiplied form.
   board_ratio: ratioComparator("board_ratio"),
   point_ratio: ratioComparator("point_ratio"),
-  // Swiss cascade-time metrics — read the assembled ledger (spec 05 §4.1).
-  buchholz: (a, b, ctx) =>
-    ctx.swiss ? sgn(buchholz(ctx.swiss, a.entrantId) - buchholz(ctx.swiss, b.entrantId)) : 0,
-  buchholz_cut1: (a, b, ctx) =>
-    ctx.swiss
-      ? sgn(buchholzCut1(ctx.swiss, a.entrantId) - buchholzCut1(ctx.swiss, b.entrantId))
+  // Swiss cascade-time metrics — read the assembled ledger (spec 05 §4.1), once per entrant per rank call (S5).
+  buchholz: (a, b, run) =>
+    run.swissReads ? sgn(run.swissReads.buchholz(a.entrantId) - run.swissReads.buchholz(b.entrantId)) : 0,
+  buchholz_cut1: (a, b, run) =>
+    run.swissReads
+      ? sgn(run.swissReads.buchholzCut1(a.entrantId) - run.swissReads.buchholzCut1(b.entrantId))
       : 0,
   // The Swiss ledger, else (W2d §5.6, B5) the pool ledger in game points, else
   // (W2d T12: rows from different pools, compared without results, §5.9) each
   // row's own SB as its pool's table materialised it.
   sberger: (a, b, run) => {
-    const table = run.swiss ?? run.poolLedger;
-    return table ? sgn(sonnebornBerger(table, a.entrantId) - sonnebornBerger(table, b.entrantId)) : compareMetric(a, b, SBERGER_KEYS);
+    const reads = run.swissReads ?? run.poolReads;
+    return reads ? sgn(reads.sonnebornBerger(a.entrantId) - reads.sonnebornBerger(b.entrantId)) : compareMetric(a, b, SBERGER_KEYS);
   },
   seed: (a, b, ctx) => {
     const sa = ctx.seeds?.get(a.entrantId) ?? Number.MAX_SAFE_INTEGER;
@@ -571,7 +620,7 @@ const COMPARATORS: Readonly<Record<PlainKey, RunComparator>> = {
   field_goals: (a, b) => sgn(fieldGoalsOf(a) - fieldGoalsOf(b)),
   // W3 (rulebook-W3-swiss.md §5 T10): the opponents' collective goal difference, off the Swiss ledger; higher first.
   opp_diff: (a, b, run) =>
-    run.swiss ? sgn(opponentsDiff(run.swiss, run.tableRows, a.entrantId) - opponentsDiff(run.swiss, run.tableRows, b.entrantId)) : 0,
+    run.swissReads ? sgn(run.swissReads.opponentsDiff(a.entrantId) - run.swissReads.opponentsDiff(b.entrantId)) : 0,
 };
 
 // Inside an h2h block each key is its plain twin applied to the mini-table:
@@ -1072,7 +1121,10 @@ export function rankStandings(rows: readonly StandingsRow[], ctx: RankContext): 
     ctx.swiss === undefined && ctx.results !== undefined && ctx.cascade.includes("sberger")
       ? buildPoolLedger(clones.map((row) => row.entrantId), ctx)
       : undefined;
-  const run: RunContext = { ...ctx, poolLedger, notes: new Map(), schedule, partial, tableRows: clones };
+  // S5: each ledger indexed once for the whole call, each entrant's Swiss values read once (`ledgerReads`).
+  const swissReads = ctx.swiss ? ledgerReads(ctx.swiss, clones) : undefined;
+  const poolReads = poolLedger === undefined ? undefined : ledgerReads(poolLedger, clones);
+  const run: RunContext = { ...ctx, swissReads, poolReads, notes: new Map(), schedule, partial };
   // No rows, no class: zero entrants are no tie, so there is nothing for lots to draw (W2d T4 N1).
   const classes = refine(clones.length === 0 ? [] : [clones], steps, run);
   // W2d §5.8 step 1 (anti-goal 3): a table with no counted fixture has no
@@ -1135,28 +1187,29 @@ export function rankStandings(rows: readonly StandingsRow[], ctx: RankContext): 
   // ledger) — materialise the ones the cascade uses into row.metrics, in the
   // table's own points (W3, SW-L2): half-points ÷ 2 only on a "half" table, and SB
   // ÷ 2 more for its win 2 / draw 1 weights — so the standings snapshot can render
-  // Buchholz/SB columns (doc 09 §2) without re-assembling the ledger. Ordering never reads these.
-  if (ctx.swiss) {
+  // Buchholz/SB columns (doc 09 §2) without re-assembling the ledger. Ordering never reads these. The values are the
+  // ones the cascade compared (S5: read once per entrant, `ledgerReads`).
+  if (swissReads !== undefined) {
     const unit = ctx.pointsUnit === "half" ? 2 : 1;
     for (const row of order) {
       if (ctx.cascade.includes("buchholz")) {
-        row.metrics["buchholz"] = buchholz(ctx.swiss, row.entrantId) / unit;
+        row.metrics["buchholz"] = swissReads.buchholz(row.entrantId) / unit;
       }
       if (ctx.cascade.includes("buchholz_cut1")) {
-        row.metrics["buchholz_cut1"] = buchholzCut1(ctx.swiss, row.entrantId) / unit;
+        row.metrics["buchholz_cut1"] = swissReads.buchholzCut1(row.entrantId) / unit;
       }
       if (ctx.cascade.includes("sberger")) {
-        row.metrics["sberger"] = sonnebornBerger(ctx.swiss, row.entrantId) / (2 * unit);
+        row.metrics["sberger"] = swissReads.sonnebornBerger(row.entrantId) / (2 * unit);
       }
       // W3 (rulebook §5 T10): a goal difference is no points unit, so `opp_diff` is never halved.
       if (ctx.cascade.includes("opp_diff")) {
-        row.metrics["opp_diff"] = opponentsDiff(ctx.swiss, order, row.entrantId);
+        row.metrics["opp_diff"] = swissReads.opponentsDiff(row.entrantId);
       }
     }
-  } else if (poolLedger !== undefined) {
+  } else if (poolReads !== undefined) {
     // W2d (spec §5.7): SB in a round robin gets the same display column.
     for (const row of order) {
-      row.metrics["sberger"] = sonnebornBerger(poolLedger, row.entrantId) / 4;
+      row.metrics["sberger"] = poolReads.sonnebornBerger(row.entrantId) / 4;
     }
   }
   return { rows: order, lotsGroups, newLotsDraws };

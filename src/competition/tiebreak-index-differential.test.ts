@@ -32,7 +32,19 @@ import { payout, setsToWinOf, swissDrawFactsOf, swissDrawPoints, unplayedSidesOf
 import { completeTableStage, type TableFixture, type TableStage } from "./stage.ts";
 import type { FixtureResult, StandingsRow } from "./standings.ts";
 import { resolveTableRules } from "./table-rules.ts";
-import { DIFF_KEYS, buildSwissLedger, metricOf, type GameResult, type SwissGame, type SwissRow, type SwissTable } from "./tiebreakers.ts";
+import {
+  DIFF_KEYS,
+  buchholz,
+  buchholzCut1,
+  buildSwissLedger,
+  metricOf,
+  opponentsDiff,
+  sonnebornBerger,
+  type GameResult,
+  type SwissGame,
+  type SwissRow,
+  type SwissTable,
+} from "./tiebreakers.ts";
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Oracle 1: the pre-change reads, verbatim from engine 10.0.3 (src/competition/tiebreakers.ts at bf70530), renamed, with
@@ -418,6 +430,7 @@ describe("S5: the Swiss tiebreak reads are byte-identical to engine 10.0.3 (ever
     let midRoundCases = 0;
     let columns = 0; // materialised Swiss cells checked against oracle 1
     let pairs = 0; // adjacent ranked pairs checked against the ordered prefix
+    let publicReads = 0; // calls of the exported reads (buchholz, buchholzCut1, sonnebornBerger, opponentsDiff) checked against oracle 1
     // Each disagreement with oracle 1, collected (and asserted empty once, below): 450k cells and pairs, one expect apiece,
     // would cost more than the sweep.
     const disagreements: string[] = [];
@@ -465,6 +478,18 @@ describe("S5: the Swiss tiebreak reads are byte-identical to engine 10.0.3 (ever
                   if (want !== undefined) columns++;
                 }
               }
+              // The exported reads keep their 10.0.3 results (they still index per call, so the small fields only, once per ledger).
+              if (chainName === "own" && size <= Math.max(...SMALL)) {
+                for (const row of rows) {
+                  const e = row.entrantId;
+                  const got = [buchholz(ledger, e), buchholz(ledger, e, { cut: 1 }), buchholzCut1(ledger, e), sonnebornBerger(ledger, e), opponentsDiff(ledger, rows, e)];
+                  const want = [read("buchholz", row), read("buchholz_cut1", row), read("buchholz_cut1", row), read("sberger", row), read("opp_diff", row)];
+                  got.forEach((v, i) => {
+                    if (!Object.is(v, want[i])) disagreements.push(`${id} ${e}: exported read #${i} ${v}, pre-change ${want[i]}`);
+                    publicReads++;
+                  });
+                }
+              }
               const prefix = orderedPrefix(chain);
               for (let i = 0; i + 1 < rows.length; i++) {
                 const [hi, lo] = [rows[i] as StandingsRow, rows[i + 1] as StandingsRow];
@@ -494,6 +519,7 @@ describe("S5: the Swiss tiebreak reads are byte-identical to engine 10.0.3 (ever
     // Anti-vacuity: every sport, every size, the empty table and the mid-round refold, every Swiss key deciding real pairs,
     // and every 16.2 category and game result on some card.
     expect(n).toBe(builtinModules.length);
+    expect(publicReads, "the exported reads, checked").toBeGreaterThan(0);
     expect(perSport.size, "every sport checked").toBe(n);
     expect([...sizes].sort((a, b) => a - b), "every field size").toEqual([...SMALL, ...LARGE]);
     expect(emptyCases, "the empty table, ranked").toBeGreaterThan(0);
