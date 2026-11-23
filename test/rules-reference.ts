@@ -78,10 +78,6 @@ export const AWAITING_PROOF: ReadonlyMap<string, string> = new Map<string, strin
   // (W6 app PR A); proof owed (W6 app PR B)". Once PR A merges the first half goes (at the engine PR's T8 if PR A is in by then); the
   // close-out drops the rest.
   // One entry per line, so a line count is the entry count.
-  ["X-DE-2", "W6 engine PR"],
-  ["X-DE-3", "W6 engine PR"],
-  ["X-DE-4", "W6 engine PR"],
-  ["X-DE-5", "W6 engine PR"],
   ["X-DE-6", "W6 engine PR"],
   ["X-DE-16", "W6 engine PR"],
   ["X-DE-10", "W6 engine PR"],

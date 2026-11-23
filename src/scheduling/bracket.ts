@@ -433,10 +433,41 @@ export interface DoubleElimOptions {
   bracketReset?: boolean; // grand-final bracket reset (LB champ must win twice)
 }
 
-// Winners bracket = an SE bracket. Each WB round's losers drop into the losers
-// bracket at the canonical slot; the LB alternates "minor" rounds (absorbing WB
-// losers) and "major" rounds (pairing LB survivors). Grand final = WB champion
-// vs LB champion, with an optional bracket-reset decider.
+// The four steps of the drop cycle (W6 rulebook RB6-X2), 0-based, for a drop of
+// G = 2h games: step c = m mod 4 maps WB game i to the LB game that takes its
+// loser. Each map is its own inverse.
+const DROP_CYCLE: ReadonlyArray<(i: number, h: number) => number> = [
+  (i, h) => 2 * h - 1 - i, // c = 0 reversed: p = G+1−i
+  (i, h) => (i < h ? h - 1 - i : 3 * h - 1 - i), // c = 1 reversed then switched
+  (i, h) => (i < h ? i + h : i - h), // c = 2 switched
+  (i) => i, // c = 3 regular
+];
+
+// RB6-X2: the 0-based LB game that takes the loser of 0-based WB game i in the
+// m-th drop after WB round 1 (m = 0 is WB round 2; rulebook r = m + 2, so
+// c = (r−2) mod 4 = m mod 4), in a drop round of `games` games. Rulebook
+// 1-based `WB r.i` → LB game p is this function at (r−2, G, i−1) + 1.
+export function lbDropGameRB6X2(m: number, games: number, i: number): number {
+  const powerOfTwo = Number.isInteger(games) && games >= 1 && (games & (games - 1)) === 0;
+  if (!Number.isInteger(m) || m < 0 || !powerOfTwo || !Number.isInteger(i) || i < 0 || i >= games) {
+    throw new EngineError("CONFIG_INVALID", "a losers'-bracket drop needs m ≥ 0, a power-of-two game count and i in range", {
+      reason: "drop_game_invalid",
+      m,
+      games,
+      i,
+    });
+  }
+  if (games === 1) return 0;
+  return (DROP_CYCLE[m % 4] as (i: number, h: number) => number)(i, games / 2);
+}
+
+// Winners bracket = an SE bracket of k rounds (RB6-D1). The LB has 2(k−1)
+// rounds (RB6-D3): LB round 1 pairs adjacent WB round-1 losers in order
+// (RB6-X1); each later WB round's losers drop by the four-step cycle
+// (RB6-X2, lbDropGameRB6X2) against the previous LB round's winners; the
+// rounds between pair neighbouring LB winners (RB6-X3). Grand final = WB
+// champion vs LB champion (RB6-X4), with an optional bracket-reset decider.
+// Drops are defined on the frame: byes never move one (RB6-X5).
 export function generateDoubleElim(opts: DoubleElimOptions): GeneratedBracket {
   const wb = buildSingleElim({
     entrants: opts.entrants,
@@ -473,17 +504,20 @@ export function generateDoubleElim(opts: DoubleElimOptions): GeneratedBracket {
       lbGameIds[L] = [];
       const prev = lbGameIds[L - 1] as string[];
       if (L % 2 === 1) {
-        // Major: winner(prev[i]) vs loser of WB round m+1, game i.
+        // Drop round (RB6-X2): winner(prev[j]) vs the loser of WB round m+1
+        // (0-based; rulebook WB round m+2) game i, where game i's loser lands
+        // on LB game j. The loop reads i from j with the same call only
+        // because each step of the cycle is its own inverse.
         const m = (L - 1) / 2;
         const wbLosers = wb.gameIds[m + 1] as string[];
-        for (let i = 0; i < prev.length; i++) {
-          const id = `lb-r${L}-i${i}`;
+        for (let j = 0; j < prev.length; j++) {
+          const id = `lb-r${L}-i${j}`;
           fixtures.push({
             id,
             bracket: "LB",
             round: k + L,
-            homeFrom: winnerOf(prev[i] as string),
-            awayFrom: loserOf(wbLosers[i] as string),
+            homeFrom: winnerOf(prev[j] as string),
+            awayFrom: loserOf(wbLosers[lbDropGameRB6X2(m, prev.length, j)] as string),
           });
           (lbGameIds[L] as string[]).push(id);
         }
