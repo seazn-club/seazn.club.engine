@@ -375,8 +375,9 @@ describe("double elimination places after a forfeit, a withdrawal or a walkover 
   // The double walkovers of RB6-F5, F7 and R10 (the LB final, reset off and on; LB 2.1; WB 2.1) have one home: the places
   // guard file (double-elim-places-guard-w6.test.ts), which completes each stage, so ranks and guard are both proved there.
 
-  it("X-FR-8 an entrant in no fixture, or whose line was voided, shares the last place", () => {
-    // Plan's call: neither lost a match nor was walked over, so neither has an exit round — below every LB round, shared.
+  it("X-FR-7 (plan's call, RB6-R1) an entrant in no fixture, or whose line was voided, shares the last place", () => {
+    // Plan's call under RB6-R1 (no rule row states it): neither lost a match nor was walked over, so neither has an
+    // exit round — below every LB round, shared.
     // wb-r0-i0 (E1 v E8) is voided: E4 walks over WB 2.1, E5 over LB 1.1. Then LB 1.2 puts out E7 (6th alone), LB 2.1 E5
     // (5th alone), LB 3.1 E6 (4th), the LB final E4 (3rd); GF1 E2 over E3. E9 is declared and in no fixture.
     // differential: today E1 7th, E8 8th, E9 9th, by seed.

@@ -21,7 +21,7 @@ export interface BracketFixtureGen {
   round: number; // 0-based, monotonic within a lane (higher = later)
   isFinal?: boolean; // SE final / DE grand final(s)
   thirdPlace?: boolean;
-  conditional?: boolean; // DE bracket-reset game: played only if the LB champ wins GF1
+  conditional?: boolean; // DE bracket-reset game: owed or not per `resetOwed` (competition/stage.ts, X-DE-11)
   home?: EntrantId; // concrete seeded entrant (round 1)
   away?: EntrantId;
   homeFrom?: BracketSlotRef; // feed
@@ -562,9 +562,9 @@ export function generateDoubleElim(opts: DoubleElimOptions): GeneratedBracket {
     awayFrom: lbChampFeed,
   });
 
-  // Optional bracket reset: a second grand final between the same two, played
-  // only if the LB champion wins GF1. The persistence adapter voids it when the
-  // WB champion wins (void counts as settled for stage completion).
+  // Optional bracket reset: a second grand final between the same two, owed per
+  // `resetOwed` (competition/stage.ts, RB6-G11). A reset that is not owed is
+  // void; an owed one may never be (completion refuses `reset_owed`, X-DE-12).
   if (opts.bracketReset === true) {
     fixtures.push({
       id: "gf-reset",
