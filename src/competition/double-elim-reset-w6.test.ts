@@ -157,8 +157,40 @@ describe("double elimination: when the reset is owed (W6 X-DE-11)", () => {
 
   it("X-DE-11 a forfeit in GF1 by the WB champion earns the reset; by the LB champion it does not", () => {
     // RB6-F9: a one-loss forfeit is a plain loss (a walkover with a winner and a loser, no walkedOver).
-    expect(resetOwed(rig({ gf: { status: "walkover", winner: "L", loser: "W" } }))).toBe(true);
-    expect(resetOwed(rig({ gf: { status: "walkover", winner: "W", loser: "L" } }))).toBe(false);
+    const byW = rig({ gf: { status: "walkover", winner: "L", loser: "W" } });
+    expect(resetOwed(byW)).toBe(true);
+    // RB6-F9 with the reset on: the reset is earned and RB6-G7 applies — a void reset refuses completion.
+    expect(refusalOf(() => completeBracketStage(stage, byW))).toEqual({ code: "STAGE_NOT_READY", data: RESET_OWED });
+    // By the LB champion: their second loss, the WB champion is champion and no reset exists (the GF1 walkover won by
+    // the WB side), so the void reset row settles nothing and the stage completes.
+    const byL = rig({ gf: { status: "walkover", winner: "W", loser: "L" } });
+    expect(resetOwed(byL)).toBe(false);
+    expect(completeBracketStage(stage, byL).title).toEqual({ kind: "champion", champion: "W" });
+  });
+
+  it("X-DE-11 GF1 void, or naming a loser and no winner, owes nothing", () => {
+    // RB6-G11: owed only when GF1 "is settled with a winner". A void GF1 decided nothing: no reset, and with the reset
+    // void too nothing crowned anyone, so completion is the existing no-title wiring refusal.
+    const voidGf = rig({ gf: { status: "void" } });
+    expect(resetOwed(voidGf)).toBe(false);
+    expect(refusalOf(() => completeBracketStage(stage, voidGf))).toEqual({ code: "CONFIG_INVALID", data: { reason: "no_title", stageId: "de" } });
+    // A row naming a loser (W) but no winner, with the LB final void (it delivered nobody): the winner term is what
+    // stops `undefined === undefined` reading as "the LB champion won".
+    const lbFinalVoid = { id: "lb-r1-i0", bracket: "LB", round: 3, status: "void", homeFrom: winnerOf("lb-r0-i0"), awayFrom: loserOf("wb-r1-i0") } satisfies BracketFixture;
+    expect(resetOwed(rig({ gf: { status: "decided", loser: "W", omit: ["away"] }, early: { "lb-r1-i0": lbFinalVoid } }))).toBe(false);
+  });
+
+  it("X-DE-11 a reset row still scheduled: owed, it is a match to play; not owed, completion still refuses it", () => {
+    // RB6-G10: owed ⇒ the stage is not complete until the reset is decided, walked over or settled.
+    const owed = rig({ gf: GF.lWon, reset: { status: "scheduled", home: "L", away: "W" } });
+    expect(resetOwed(owed)).toBe(true);
+    expect(refusalOf(() => completeBracketStage(stage, owed))).toEqual({ code: "STAGE_NOT_READY", data: { stageId: "de", reason: "fixtures_undecided", undecided: ["gf-reset"] } });
+    // RB6-G6 says a reset that is not owed does not exist; the engine does not void it for the caller
+    // (undecidedBracketFixtures is unchanged), so a scheduled one still refuses: app PR B's settleReset must void the
+    // reset the moment resetOwed turns false. Pinned so that contract is visible.
+    const notOwed = rig({ gf: GF.wWon, reset: { status: "scheduled" } });
+    expect(resetOwed(notOwed)).toBe(false);
+    expect(refusalOf(() => completeBracketStage(stage, notOwed))).toEqual({ code: "STAGE_NOT_READY", data: { stageId: "de", reason: "fixtures_undecided", undecided: ["gf-reset"] } });
   });
 
   it("X-DE-11 n = 2: the LB champion is the WB final's loser", () => {
@@ -198,7 +230,8 @@ describe("double elimination: when the reset is owed (W6 X-DE-11)", () => {
       checked++;
     }
     expect(checked).toBe(11);
-    // The data names the fixture whose wiring is wrong.
+    // The data names the fixture(s) whose wiring is wrong.
+    expect(refusalOf(() => resetOwed(cases[0]![1])).data).toEqual({ reason: "reset_not_unique", fixtureIds: ["gf-reset", "gf-reset-2"] });
     expect(refusalOf(() => resetOwed(rig({ reset: { omit: ["awayFrom"] } }))).data).toEqual({ reason: "reset_feed_invalid", fixtureId: "gf-reset" });
     expect(refusalOf(() => resetOwed(rig({ gf: { omit: ["homeFrom"] } }))).data).toEqual({ reason: "grand_final_feed_invalid", fixtureId: "gf" });
     // Every reader of a settled bracket reads the same answer, so every one refuses the same wiring.
@@ -292,5 +325,16 @@ describe("double elimination: a finalist out on an earned reset (W6 X-CH-9)", ()
     const rows = rig({ gf: GF.lWon, reset: { status: "walkover", home: "L", away: "W", walkedOver: "both" } });
     expect(isBracketStageComplete(stage, rows)).toBe(true);
     expect(completeBracketStage(stage, rows).title).toEqual({ kind: "vacant" });
+  });
+
+  it("X-CH-9 joint winners declared on an earned reset settle it: both finalists 1st", () => {
+    // RB6-C5: "Declared on an earned reset, it settles the reset for RB6-G7"; both finalists rank 1st.
+    const rows = rig({ gf: GF.lWon, reset: { status: "decided", home: "L", away: "W", jointWinners: true } });
+    expect(resetOwed(rows)).toBe(true);
+    expect(isBracketStageComplete(stage, rows)).toBe(true);
+    const done = completeBracketStage(stage, rows);
+    expect(done.title.kind).toBe("joint");
+    expect(done.title.kind === "joint" ? [...done.title.winners].sort() : []).toEqual(["L", "W"]);
+    expect(top2(rows).sort()).toEqual([["L", 1], ["W", 1]]);
   });
 });

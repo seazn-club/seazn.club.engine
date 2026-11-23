@@ -149,7 +149,10 @@ describe("double elimination losers'-bracket rematches (W6 X-DE-6)", () => {
           const run = play(n, draw, pick, gen);
           const where = `n=${n} ${draw} vector ${v}`;
           expect(run.lbMatches, where).toBe(n - 2);
-          expect(picks, where).toBe(matches); // every bit decided one WB or LB match, none was left unread
+          // `picks` saturates at 2n − 3, and GF1 / the reset would take a bit if WB + LB used fewer, so this alone only
+          // says the vector was read through. What pins "bit k = the k-th WB or LB match" is the n − 2 LB matches above
+          // plus the n − 1 WB matches every field plays (RB6-D4).
+          expect(picks, where).toBe(matches);
           for (const r of run.rematches) expect(r.lbRound, `${where} ${r.fixtureId} ${r.pair}`).toBeGreaterThanOrEqual(bound);
           rematches += run.rematches.length;
           vectors++;
