@@ -1,0 +1,570 @@
+// S5 (perf/swiss-tiebreak-index): rankStandings re-indexed the whole Swiss ledger on EVERY comparison of its cascade sort
+// (`buchholz`, `buchholzCut1`, `sonnebornBerger` and `opponentsDiff` each called `indexTable`), 42-57% of a 500-entrant Swiss
+// refold's CPU in the app (W5 perf measure, 2026-11-22). The change reads each of those values once per entrant per rank
+// call. It is a pure refactor, so the output must not move by one byte. Two oracles, neither derived from the code under
+// test:
+//   1. PRE_CHANGE: the four metric functions exactly as engine 10.0.3 (bf70530) wrote them, each indexing the ledger on
+//      every call. Every row's materialised Swiss column is re-read through them, and the ranked order must be
+//      non-increasing on the cascade's leading points-and-Swiss keys read through them (spec 05 §4: a plain key orders
+//      each class the keys before it left level).
+//   2. RECORDED: a 128-bit digest (`digestOf`) of completeTableStage's whole output (events, tables, new lots draws), one per sport and cfg over
+//      all of that cfg's cases, recorded by engine 10.0.3 BEFORE the change, over this same seeded sweep.
+// The sweep: every sport in the registry (forEachSport); every declared cfg at 8, 9 and 33 entrants, and each sport's
+// first declared cfg at 100, 257 and 500 (the S5 sizes; the cfg moves only the points rule and the chain, which the small
+// sizes already sweep); ranked before any result (the empty table), after rounds 1, 4 and 7 of 7, and in the middle of
+// round 5 (some boards in play or voided, as a per-result refold sees them); under the sport's own Swiss chain and under
+// ALL_SWISS (every Swiss key, so SB and opp_diff run for every sport). Each field has late entrants (absent rounds before
+// entry, C.07 16.2.3), withdrawals (absent rounds after, 16.2.5), byes (odd fields, 16.2.1), forfeits and double
+// walkovers (16.2.2, 16.2.4), draws where the sport's Swiss stage reaches one, and the level classes a Swiss table is
+// full of. Results come through the producers the app runs: the stage rule's `payout` over the result, the module's own
+// standingsDelta for a bye or a walkover, and `unplayedSidesOf` for the unplayed side(s).
+import { describe, expect, it } from "vitest";
+import { EngineError } from "../core/errors.ts";
+import { MatchOutcome, type EntrantId, type StandingsDelta } from "../core/types.ts";
+import type { AnySportModule, TiebreakerKey } from "../sport/module.ts";
+import { builtinModules } from "../sports/index.ts";
+import { declaredCfgs } from "../testkit/declared-cfgs.ts";
+import { forEachSport } from "../testkit/for-each-sport.ts";
+import { tableRulesOf } from "../testkit/helpers.ts";
+import { decidedInFor } from "./decided-in.ts";
+import { payout, setsToWinOf, swissDrawFactsOf, swissDrawPoints, unplayedSidesOf, type PointsRule } from "./points.ts";
+import { completeTableStage, type TableFixture, type TableStage } from "./stage.ts";
+import type { FixtureResult, StandingsRow } from "./standings.ts";
+import { resolveTableRules } from "./table-rules.ts";
+import {
+  DIFF_KEYS,
+  buchholz,
+  buchholzCut1,
+  buildSwissLedger,
+  metricOf,
+  opponentsDiff,
+  sonnebornBerger,
+  type GameResult,
+  type SwissGame,
+  type SwissRow,
+  type SwissTable,
+} from "./tiebreakers.ts";
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Oracle 1: the pre-change reads, verbatim from engine 10.0.3 (src/competition/tiebreakers.ts at bf70530), renamed, with
+// one liberty: each ledger and table THIS TEST builds is indexed once (`indexOnce`, `rowsOnce`), where 10.0.3 re-indexed on
+// every read. The test never writes a ledger or a table after building it, and each case builds its own (ledgerOf), so the
+// index is the very map each read would have built, and it can never be another case's. Without it the oracle alone is
+// O(n^2) per table, most of this file's time at 500 entrants.
+// ---------------------------------------------------------------------------------------------------------------------
+function indexTable(table: SwissTable): Map<EntrantId, SwissRow> {
+  const map = new Map<EntrantId, SwissRow>();
+  for (const row of table) map.set(row.entrant, row);
+  return map;
+}
+const INDEXED = new WeakMap<SwissTable, Map<EntrantId, SwissRow>>();
+function indexOnce(table: SwissTable): Map<EntrantId, SwissRow> {
+  const kept = INDEXED.get(table);
+  if (kept !== undefined) return kept;
+  const map = indexTable(table);
+  INDEXED.set(table, map);
+  return map;
+}
+const ROWS = new WeakMap<readonly StandingsRow[], Map<EntrantId, StandingsRow>>();
+function rowsOnce(rows: readonly StandingsRow[]): Map<EntrantId, StandingsRow> {
+  const kept = ROWS.get(rows);
+  if (kept !== undefined) return kept;
+  const map = new Map(rows.map((r) => [r.entrantId, r]));
+  ROWS.set(rows, map);
+  return map;
+}
+const isVur = (game: SwissGame): boolean =>
+  game.unplayed === "absent" || game.unplayed === "absent_last" || game.unplayed === "forfeit_loss";
+function opponentScore(byEntrant: Map<EntrantId, SwissRow>, row: SwissRow, game: SwissGame): number {
+  if (game.unplayed !== undefined) {
+    if (game.cap === undefined) {
+      throw new EngineError("CONFIG_INVALID", `"${row.entrant}"'s round ${game.round} is unplayed (${game.unplayed}) but carries no 16.4 cap`, { entrantId: row.entrant, round: game.round });
+    }
+    return Math.min(row.score, game.cap);
+  }
+  if (game.opponent === null) {
+    throw new EngineError("CONFIG_INVALID", `"${row.entrant}"'s round ${game.round} names no opponent and no unplayed category`, { entrantId: row.entrant, round: game.round });
+  }
+  const opp = byEntrant.get(game.opponent);
+  if (opp === undefined) {
+    throw new EngineError("CONFIG_INVALID", `Swiss ledger references unknown opponent "${game.opponent}"`, { entrantId: row.entrant, opponent: game.opponent });
+  }
+  return opp.adjusted ?? opp.score;
+}
+function requireRow(byEntrant: Map<EntrantId, SwissRow>, entrant: EntrantId): SwissRow {
+  const row = byEntrant.get(entrant);
+  if (row === undefined) throw new Error(`entrant "${entrant}" is not in the Swiss table`);
+  return row;
+}
+function preBuchholz(table: SwissTable, entrant: EntrantId, opts: { cut?: number } = {}): number {
+  const byEntrant = indexOnce(table);
+  const row = requireRow(byEntrant, entrant);
+  const cards = row.games.map((game) => ({ score: opponentScore(byEntrant, row, game), vur: isVur(game) }));
+  const scores = cards.map((card) => card.score);
+  const cut = opts.cut ?? 0;
+  if (cut < 0) throw new EngineError("CONFIG_INVALID", `a Buchholz cut drops opponents' scores, so it is never negative: ${cut}`, { cut });
+  if (cut <= 0) return scores.reduce((sum, s) => sum + s, 0);
+  const left = [...cards].sort((a, b) => a.score - b.score);
+  for (let k = 0; k < cut; k++) {
+    const vur = left.findIndex((card) => card.vur);
+    left.splice(vur === -1 ? 0 : vur, 1);
+  }
+  return left.reduce((sum, card) => sum + card.score, 0);
+}
+function preBuchholzCut1(table: SwissTable, entrant: EntrantId): number {
+  return preBuchholz(table, entrant, { cut: 1 });
+}
+function preSonnebornBerger(table: SwissTable, entrant: EntrantId): number {
+  const byEntrant = indexOnce(table);
+  const row = requireRow(byEntrant, entrant);
+  let total = 0;
+  row.games.forEach((game) => {
+    const oppScore = opponentScore(byEntrant, row, game);
+    const weight = game.result === "win" ? 2 : game.result === "draw" ? 1 : 0;
+    total += weight * oppScore;
+  });
+  return total;
+}
+function preOpponentsDiff(table: SwissTable, rows: readonly StandingsRow[], entrant: EntrantId): number {
+  const row = requireRow(indexOnce(table), entrant);
+  const byEntrant = rowsOnce(rows);
+  let total = 0;
+  for (const game of row.games) {
+    if (game.unplayed !== undefined) continue;
+    if (game.opponent === null) {
+      throw new EngineError("CONFIG_INVALID", `"${entrant}"'s round ${game.round} names no opponent and no unplayed category`, { entrantId: entrant, round: game.round });
+    }
+    const opponent = byEntrant.get(game.opponent);
+    if (opponent === undefined) {
+      throw new EngineError("CONFIG_INVALID", `opp_diff reads "${entrant}"'s opponent "${game.opponent}", which has no row in the table`, { entrantId: entrant, opponent: game.opponent });
+    }
+    const diff = metricOf(opponent, DIFF_KEYS);
+    if (diff === undefined) {
+      const need = DIFF_KEYS.join(" or ");
+      throw new EngineError("CONFIG_INVALID", `opp_diff reads "${entrant}"'s opponent "${game.opponent}", whose row records no goal difference (${need})`, { entrantId: entrant, opponent: game.opponent, need });
+    }
+    total += diff;
+  }
+  return total;
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// The seeded sweep.
+// ---------------------------------------------------------------------------------------------------------------------
+/** Every Swiss key behind points, then the head-to-head step and lots: SB and opp_diff run for every sport. */
+const ALL_SWISS: readonly TiebreakerKey[] = ["points", "buchholz_cut1", "buchholz", "sberger", "opp_diff", "direct", "lots"];
+/** The keys whose value the pre-change oracle (or the row) gives: an ordered prefix of these is checked pair by pair. */
+const SWISS_KEYS = ["buchholz_cut1", "buchholz", "sberger", "opp_diff"] as const;
+type SwissKey = (typeof SWISS_KEYS)[number];
+const ROUNDS = 7;
+const SMALL = [8, 9, 33] as const;
+const LARGE = [100, 257, 500] as const;
+/** Where each case is ranked: 0 = before any result (the empty table), "5-mid" = rounds 1-4 and half of round 5. */
+const AT = [0, 1, 4, "5-mid", 7] as const;
+type At = (typeof AT)[number];
+
+/** mulberry32: a seeded generator owned by this test, so an engine RNG change cannot move the recorded sweep. */
+function rngOf(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+interface Sport {
+  readonly m: AnySportModule;
+  readonly cfgName: string;
+  readonly cfg: unknown;
+  readonly rule: PointsRule;
+  /** The sport's own Swiss chain, as an unpinned stage resolves it. */
+  readonly chain: readonly TiebreakerKey[];
+  readonly drawStands: boolean;
+  readonly setsToWin: number | undefined;
+}
+
+function sportOf(m: AnySportModule, cfgName: string, cfg: unknown): Sport {
+  const pin = resolveTableRules({ module: m, stageKind: "swiss", mergedCfg: cfg, stageOwn: { points: null, tiebreakers: null, crossGroup: null }, divisionTiebreakers: null, pinned: null });
+  const parsed = m.configSchema.parse(cfg);
+  const drawStands = m.reachableResultKinds(parsed, "swiss").has("draw") || m.supportsDraws(parsed, "swiss");
+  return { m, cfgName, cfg, rule: pin.points, chain: pin.tiebreakers, drawStands, setsToWin: setsToWinOf(m, cfg) };
+}
+
+/** A played board, paid by the stage rule through the real payout. The ledger is the union of every sport's (sets, rally
+ *  points, games, boards, goals, runs), so each key of each chain has something to read; the winner takes the sets a match
+ *  is won on, so a set-score rule prices a final score the sport declares. */
+function played(s: Sport, rng: () => number, round: number, home: EntrantId, away: EntrantId, r: "h" | "a" | "d"): TableFixture {
+  const toWin = s.setsToWin ?? 2;
+  const lostSets = Math.floor(rng() * toWin);
+  const g1 = 1 + Math.floor(rng() * 5);
+  const g2 = r === "d" ? g1 : Math.floor(rng() * g1);
+  const side = (id: EntrantId, won: boolean): StandingsDelta => {
+    const drawn = r === "d";
+    const sw = drawn ? lostSets : won ? toWin : lostSets;
+    const sl = drawn ? lostSets : won ? lostSets : toWin;
+    const gf = drawn || won ? g1 : g2;
+    const ga = drawn ? g1 : won ? g2 : g1;
+    return {
+      entrantId: id, played: 1, won: won ? 1 : 0, drawn: drawn ? 1 : 0, lost: !won && !drawn ? 1 : 0, points: 0,
+      metrics: {
+        sets_won: sw, sets_lost: sl, points_won: 21 * sw + 15 * sl, points_lost: 21 * sl + 15 * sw, games_won: 6 * sw + 3 * sl, games_lost: 6 * sl + 3 * sw,
+        boards_won: 2 * sw + sl, boards_lost: 2 * sl + sw, gf, ga, gd: gf - ga, for: gf, against: ga, diff: gf - ga,
+        runs_for: 120 + 10 * gf, runs_against: 120 + 10 * ga, balls_faced_eff: 120, balls_bowled_eff: 120,
+      },
+    };
+  };
+  const raw: FixtureResult = [side(home, r === "h"), side(away, r === "a")];
+  const outcome = r === "d" ? MatchOutcome.parse({ kind: "draw" }) : MatchOutcome.parse({ kind: "win", winner: r === "h" ? home : away, loser: r === "h" ? away : home });
+  const result = payout(outcome, decidedInFor(s.m, outcome), raw, true, s.rule, s.m.awardScoreKeys, s.setsToWin);
+  return { id: `r${round}-${home}-${away}`, roundNo: round, status: "decided", result, unplayed: null };
+}
+/** A forfeit or a double walkover, as the app writes a walked-over table fixture (swiss-unplayed.test.ts `walkedOver`). */
+function walkedOver(s: Sport, round: number, home: EntrantId, away: EntrantId, outcome: MatchOutcome): TableFixture {
+  const cfg = s.m.configSchema.parse(s.cfg);
+  const state = s.m.init(cfg, { home: { entrantId: home, slots: [] }, away: { entrantId: away, slots: [] } });
+  const raw = s.m.standingsDelta(outcome, cfg, { kind: "swiss" }, state) as FixtureResult;
+  const result = payout(outcome, decidedInFor(s.m, outcome), raw, false, s.rule, s.m.awardScoreKeys, s.setsToWin);
+  return { id: `r${round}-${home}-${away}`, roundNo: round, status: "walkover", result, unplayed: unplayedSidesOf(outcome, false, result) };
+}
+/** A pairing-allocated bye, as the app's `awardByeDelta` builds it (swiss-unplayed.test.ts `paidBye`). */
+function bye(s: Sport, round: number, winner: EntrantId): TableFixture {
+  const cfg = s.m.configSchema.parse(s.cfg);
+  const outcome = MatchOutcome.parse({ kind: "award", winner, loser: null, reason: "bye" });
+  const state = s.m.init(cfg, { home: { entrantId: winner, slots: [] }, away: { entrantId: "__bye__", slots: [] } });
+  const raw = s.m.standingsDelta(outcome, cfg, { kind: "swiss" }, state) as FixtureResult;
+  const paid = payout(outcome, decidedInFor(s.m, outcome), raw, false, s.rule, s.m.awardScoreKeys, s.setsToWin).find((d) => d.entrantId === winner);
+  if (paid === undefined) throw new Error(`${s.m.key}: the paid bye names no winner`);
+  return { id: `r${round}-bye-${winner}`, roundNo: round, status: "walkover", awardDelta: paid };
+}
+
+interface Field {
+  readonly entrants: readonly EntrantId[];
+  /** All seven rounds' boards, in round order. */
+  readonly fixtures: readonly TableFixture[];
+  /** Each entrant's unpaired rounds over all seven (late entry before, withdrawal after). */
+  readonly absent: ReadonlyMap<EntrantId, readonly number[]>;
+}
+
+/** Seven Swiss rounds: each round pairs the active field by score (a random order within a score), the lowest without a
+ *  bye sits out an odd round, and each board is a forfeit (3%), a double walkover (1%), a draw (12% where one stands) or a
+ *  win for either side. About 4% enter late (round 2 or 3) and 4% withdraw (after round 1 to 4). */
+function fieldOf(s: Sport, size: number, seed: number): Field {
+  const rng = rngOf(seed);
+  const entrants = Array.from({ length: size }, (_, i) => `p${String(i + 1).padStart(3, "0")}`);
+  const enters = new Map<EntrantId, number>();
+  const leaves = new Map<EntrantId, number>();
+  for (const id of entrants) {
+    const u = rng();
+    if (u < 0.04) enters.set(id, 2 + Math.floor(rng() * 2));
+    else if (u < 0.08) leaves.set(id, 2 + Math.floor(rng() * 4));
+  }
+  const score = new Map(entrants.map((id) => [id, 0]));
+  const add = (id: EntrantId, points: number) => score.set(id, (score.get(id) ?? 0) + points);
+  const hadBye = new Set<EntrantId>();
+  const fixtures: TableFixture[] = [];
+  const absent = new Map<EntrantId, number[]>();
+  for (let round = 1; round <= ROUNDS; round++) {
+    const active: EntrantId[] = [];
+    for (const id of entrants) {
+      if ((enters.get(id) ?? 1) > round || (leaves.get(id) ?? Infinity) <= round) absent.set(id, [...(absent.get(id) ?? []), round]);
+      else active.push(id);
+    }
+    const order = new Map(active.map((id) => [id, rng()]));
+    active.sort((a, b) => (score.get(b) ?? 0) - (score.get(a) ?? 0) || (order.get(a) ?? 0) - (order.get(b) ?? 0));
+    if (active.length % 2 === 1) {
+      let i = active.length - 1;
+      while (i > 0 && hadBye.has(active[i] as EntrantId)) i--;
+      const sitter = active.splice(i, 1)[0] as EntrantId;
+      hadBye.add(sitter);
+      const f = bye(s, round, sitter);
+      fixtures.push(f);
+      add(sitter, f.awardDelta?.points ?? 0);
+    }
+    for (let i = 0; i + 1 < active.length; i += 2) {
+      const [home, away] = [active[i] as EntrantId, active[i + 1] as EntrantId];
+      const u = rng();
+      let f: TableFixture;
+      if (u < 0.03) {
+        const homeWins = rng() < 0.5;
+        f = walkedOver(s, round, home, away, MatchOutcome.parse({ kind: "award", winner: homeWins ? home : away, loser: homeWins ? away : home, reason: "walkover" }));
+      } else if (u < 0.04) f = walkedOver(s, round, home, away, MatchOutcome.parse({ kind: "double_walkover" }));
+      else if (u < 0.04 + (s.drawStands ? 0.12 : 0)) f = played(s, rng, round, home, away, "d");
+      else f = played(s, rng, round, home, away, rng() < 0.5 ? "h" : "a");
+      fixtures.push(f);
+      for (const d of f.result ?? []) add(d.entrantId, d.points);
+    }
+  }
+  return { entrants, fixtures, absent };
+}
+
+/** The stage and its boards as a refold sees them at `at`: the absences up to that round, the boards up to it, and in the
+ *  middle of round 5 every second board of the round still in play and every fourth voided (pending: they count nothing). */
+function stageAt(s: Sport, chain: readonly TiebreakerKey[], field: Field, at: At): { stage: TableStage; fixtures: TableFixture[]; through: number } {
+  const through = at === "5-mid" ? 5 : at;
+  const absent = new Map<EntrantId, number[]>();
+  for (const [id, rounds] of field.absent) {
+    const upTo = rounds.filter((r) => r <= through);
+    if (upTo.length > 0) absent.set(id, upTo);
+  }
+  let board = 0;
+  const fixtures = field.fixtures
+    .filter((f) => (f.roundNo ?? 0) <= through)
+    .map((f): TableFixture => {
+      if (at !== "5-mid" || f.roundNo !== 5 || f.result === undefined) return f;
+      board++;
+      if (board % 4 === 0) return { id: f.id, roundNo: 5, status: "void" };
+      return board % 2 === 0 ? { id: f.id, roundNo: 5, status: "in_play" } : f;
+    });
+  const stage: TableStage = {
+    id: "sw", kind: "swiss", swiss: true, entrants: [...field.entrants], rules: tableRulesOf(chain, s.rule), rngSeed: 7, rounds: ROUNDS,
+    swissAbsentRounds: absent, swissDraw: swissDrawFactsOf(s.m, s.cfg),
+  };
+  return { stage, fixtures, through };
+}
+
+/** The ledger completeTableStage ranks by, rebuilt from the same inputs by the same builder (stage.ts `swissLedgerOf`). */
+function ledgerOf(s: Sport, stage: TableStage, fixtures: readonly TableFixture[]): SwissTable {
+  const counted = fixtures
+    .filter((f) => (f.status === "decided" || f.status === "walkover") && (f.result !== undefined || f.awardDelta !== undefined))
+    .map((f) => ({
+      round: f.roundNo as number,
+      ...(f.result === undefined ? {} : { result: f.result }),
+      ...(f.awardDelta === undefined ? {} : { award: f.awardDelta }),
+      ...(f.unplayed == null ? {} : { unplayed: f.unplayed }),
+    }));
+  return buildSwissLedger(stage.entrants, counted, {
+    rounds: stage.rounds,
+    drawPoints: swissDrawPoints(s.rule, swissDrawFactsOf(s.m, s.cfg)),
+    absent: stage.swissAbsentRounds,
+  });
+}
+
+/** The value a key reads for a row: the table points, or a Swiss key through the pre-change oracle (in ledger units). */
+function oracleOf(ledger: SwissTable, rows: readonly StandingsRow[]): (key: "points" | SwissKey, row: StandingsRow) => number {
+  const memo = new Map<string, number>();
+  return (key, row) => {
+    if (key === "points") return row.points;
+    const k = `${key}:${row.entrantId}`;
+    let v = memo.get(k);
+    if (v === undefined) {
+      v = key === "buchholz_cut1" ? preBuchholzCut1(ledger, row.entrantId)
+        : key === "buchholz" ? preBuchholz(ledger, row.entrantId)
+          : key === "sberger" ? preSonnebornBerger(ledger, row.entrantId)
+            : preOpponentsDiff(ledger, rows, row.entrantId);
+      memo.set(k, v);
+    }
+    return v;
+  };
+}
+
+/** The leading keys of a chain the oracle can read: points and Swiss keys, up to the first other key. */
+function orderedPrefix(chain: readonly TiebreakerKey[]): ("points" | SwissKey)[] {
+  const prefix: ("points" | SwissKey)[] = [];
+  for (const key of chain) {
+    if (key !== "points" && !(SWISS_KEYS as readonly string[]).includes(key)) break;
+    prefix.push(key as "points" | SwissKey);
+  }
+  return prefix;
+}
+
+const GAME_RESULTS: readonly GameResult[] = ["win", "draw", "loss"];
+
+/** The digest RECORDED is checked with: a pure streaming 128-bit string hash (cyrb128's mixing, four 32-bit lanes).
+ *  `node:crypto` is out of bounds under src/ (scripts/engine-boundary.ts, whose one exemption is testkit/golden.ts). It is
+ *  no cryptographic hash and needs none: it guards against drift, not an adversary. That it tells the sport-cfgs apart
+ *  is asserted below, so a hash that collapsed to a constant could not pass the recording vacuously. */
+function digestOf(): { update: (text: string) => void; hex: () => string } {
+  let [h1, h2, h3, h4] = [1779033703, 3144134277, 1013904242, 2773480762];
+  return {
+    update: (text) => {
+      for (let i = 0; i < text.length; i++) {
+        const k = text.charCodeAt(i);
+        h1 = h2 ^ Math.imul(h1 ^ k, 597399067);
+        h2 = h3 ^ Math.imul(h2 ^ k, 2869860233);
+        h3 = h4 ^ Math.imul(h3 ^ k, 951274213);
+        h4 = h1 ^ Math.imul(h4 ^ k, 2716044179);
+      }
+    },
+    hex: () => {
+      let [a, b, c, d] = [h1, h2, h3, h4];
+      a = Math.imul(c ^ (a >>> 18), 597399067);
+      b = Math.imul(d ^ (b >>> 22), 2869860233);
+      c = Math.imul(a ^ (c >>> 17), 951274213);
+      d = Math.imul(b ^ (d >>> 19), 2716044179);
+      a ^= b ^ c ^ d;
+      b ^= a;
+      c ^= a;
+      d ^= a;
+      return [a, b, c, d].map((x) => (x >>> 0).toString(16).padStart(8, "0")).join("");
+    },
+  };
+}
+
+/** Recorded by engine 10.0.3 (bf70530, the pre-change tiebreakers.ts) over exactly this sweep: per sport and cfg, the
+ *  `digestOf` every case's `${id}\n${JSON.stringify(completeTableStage(...))}\n`, in sweep order. */
+const RECORDED: Readonly<Record<string, string>> = {
+  "football/(schema default)": "6a37f858704a0d44806835e32339209c",
+  "football/11-a-side": "02b50e3066743ce9a5826d6eed96da7b",
+  "football/youth": "76a7580d9a27ae95bd03d3aef215e71f",
+  "football/small-sided": "cb105aad462a45c28cab3c37cf75b68e",
+  "football/mini-soccer": "206dbe47c5334d2b4f3ff44f69494291",
+  "cricket/(schema default)": "88d66897a829b8d42c33f80c0a905a9b",
+  "cricket/t20": "354628da991a1bcfaa40f6d04451db24",
+  "cricket/odi": "b3fe505fc9898148e82640a6a790ed7f",
+  "cricket/hundred": "473d170f285993d0f017fd313d38b98c",
+  "cricket/test": "f3c08aaaa527a7b3088a546e24da98c5",
+  "boardgame/(schema default)": "0a985da909f6d1650f4796597270b708",
+  "boardgame/classical": "c1b58fb4f0726374a0925c88343bd23b",
+  "boardgame/rapid": "0443aa0ce7df985a05044648a53c2e4e",
+  "boardgame/blitz": "114719f93fc7d9da8049037ef4f0a77c",
+  "carrom/(schema default)": "87d91d2195a5ebff2371b5f3fde0f514",
+  "carrom/icf": "5de80c2acdb33de8aae6c1c729f48d0c",
+  "carrom/club-29": "bff95cb0937f47a3c838283ca5111dae",
+  "generic/win_loss": "2459a812404a49a79cd2ac5bfa167031",
+  "generic/score": "819401748dda78f484044ce14ffc9755",
+  "volleyball/(schema default)": "cdad7b1190f75b813632d9094cd39768",
+  "volleyball/indoor": "fbee04b08dbfa36fc7d3971cca459628",
+  "volleyball/beach": "39c3345503d36a866e20ba3941238a47",
+  "badminton/(schema default)": "b7894ac84700595dcbde51e820d86001",
+  "badminton/bwf": "58021dcd1f0c0481714785b5dc47aed3",
+  "badminton/bwf-3x15": "d51279720a723a43ce873d50c1c02a45",
+  "badminton/short": "c78d283581ca074a8d724897e9e24a36",
+  "tabletennis/(schema default)": "19c6305b8d9faf3f00c8279f0652ff93",
+  "tabletennis/bo5": "ed7fb0c9340faaaed5ff8b7d10025c65",
+  "tabletennis/bo7": "79a7d02164d8afc7a49dbe401e940cc1",
+  "tabletennis/hardbat-21": "44529d2ca78ee6a9dd6983e7924a3c6d",
+  "tennis/(schema default)": "13dbb141ba9e520a24f9096abbabf6e0",
+  "tennis/tour": "b93712240470f9e09a4f97ce59b8c12f",
+  "tennis/grand-slam": "68f82d333e406864567090838f8410bd",
+  "tennis/fast4": "289ede2f9fdf5c343283730e086be120",
+  "tennis/doubles-noad-mtb10": "07f27954e75e5af15adf73b0563f3f01",
+  "tennis/short-sets": "c67057a107eff5bdbc3035e371f7fd8e",
+  "icehockey/(schema default)": "2e1585c5bda02acfd0ca561c2b62297e",
+  "icehockey/iihf": "549f72ddd15b535b6ff38aba69e9a79f",
+  "icehockey/recreational": "33e8fafd4878756e5631113cb33e7c01",
+  "hockey/(schema default)": "28c9f95bc15463b35af887046916b7d5",
+  "hockey/fih-outdoor": "754b01be098b41a8371bbd45a02faa02",
+  "hockey/fih-shootout": "f91237babd772a9f85979f9c430bc922",
+  "hockey/youth": "d7ceb609f257179171581170b9422ffd",
+};
+
+describe("S5: the Swiss tiebreak reads are byte-identical to engine 10.0.3 (every sport, seeded sweep up to 500 entrants; counted)", () => {
+  it("every row's Swiss column equals the pre-change read, the order is non-increasing on the chain's points-and-Swiss prefix read the pre-change way, and each sport-cfg's whole output hashes to its 10.0.3 recording", () => {
+    const digests = new Map<string, ReturnType<typeof digestOf>>();
+    let cases = 0;
+    let declared = 0; // the sweep's size, read off the registry: per declared cfg its sizes x both chains x every AT
+    let emptyCases = 0;
+    let midRoundCases = 0;
+    let columns = 0; // materialised Swiss cells checked against oracle 1
+    let pairs = 0; // adjacent ranked pairs checked against the ordered prefix
+    let publicReads = 0; // calls of the exported reads (buchholz, buchholzCut1, sonnebornBerger, opponentsDiff) checked against oracle 1
+    // Each disagreement with oracle 1, collected (and asserted empty once, below): 450k cells and pairs, one expect apiece,
+    // would cost more than the sweep.
+    const disagreements: string[] = [];
+    const decidedBy = new Map<string, number>(); // the Swiss key that first separated an adjacent pair, by key
+    const categories = new Map<string, number>(); // ledger cards seen, by 16.2 category ("played" for a game)
+    const results = new Map<GameResult, number>();
+    const sizes = new Set<number>();
+    const perSport = new Map<string, number>();
+    let lotsDrawn = 0;
+
+    const n = forEachSport(({ module: m }) => {
+      declaredCfgs(m as never).forEach(({ name, cfg }, cfgIndex) => {
+        const s = sportOf(m, name, cfg);
+        const key = `${m.key}/${name}`;
+        const hash = digestOf();
+        digests.set(key, hash);
+        const fieldSizes: readonly number[] = cfgIndex === 0 ? [...SMALL, ...LARGE] : SMALL;
+        declared += fieldSizes.length * 2 * AT.length;
+        for (const size of fieldSizes) {
+          const field = fieldOf(s, size, 20261122 + size);
+          for (const [chainName, chain] of [["own", s.chain], ["all-swiss", ALL_SWISS]] as const) {
+            for (const at of AT) {
+              const id = `${key}/${chainName}/n${size}/at${at}`;
+              const { stage, fixtures } = stageAt(s, chain, field, at);
+              const done = completeTableStage(stage, fixtures);
+              hash.update(`${id}\n${JSON.stringify(done)}\n`);
+              const rows = done.tables.overall ?? [];
+              expect(rows, `${id}: one row per entrant`).toHaveLength(size);
+
+              const ledger = ledgerOf(s, stage, fixtures);
+              for (const row of ledger) {
+                for (const game of row.games) {
+                  const cat = game.unplayed ?? "played";
+                  categories.set(cat, (categories.get(cat) ?? 0) + 1);
+                  results.set(game.result, (results.get(game.result) ?? 0) + 1);
+                }
+              }
+              const read = oracleOf(ledger, rows);
+              const unit = s.rule.unit === "half" ? 2 : 1;
+              const scale: Record<SwissKey, number> = { buchholz_cut1: unit, buchholz: unit, sberger: 2 * unit, opp_diff: 1 };
+              for (const row of rows) {
+                for (const k of SWISS_KEYS) {
+                  const want = chain.includes(k) ? read(k, row) / scale[k] : undefined;
+                  if (!Object.is(row.metrics[k], want)) disagreements.push(`${id} ${row.entrantId} ${k}: ${row.metrics[k]}, pre-change ${want}`);
+                  if (want !== undefined) columns++;
+                }
+              }
+              // The exported reads keep their 10.0.3 results (they still index per call, so the small fields only, once per ledger).
+              if (chainName === "own" && size <= Math.max(...SMALL)) {
+                for (const row of rows) {
+                  const e = row.entrantId;
+                  const got = [buchholz(ledger, e), buchholz(ledger, e, { cut: 1 }), buchholzCut1(ledger, e), sonnebornBerger(ledger, e), opponentsDiff(ledger, rows, e)];
+                  const want = [read("buchholz", row), read("buchholz_cut1", row), read("buchholz_cut1", row), read("sberger", row), read("opp_diff", row)];
+                  got.forEach((v, i) => {
+                    if (!Object.is(v, want[i])) disagreements.push(`${id} ${e}: exported read #${i} ${v}, pre-change ${want[i]}`);
+                    publicReads++;
+                  });
+                }
+              }
+              const prefix = orderedPrefix(chain);
+              for (let i = 0; i + 1 < rows.length; i++) {
+                const [hi, lo] = [rows[i] as StandingsRow, rows[i + 1] as StandingsRow];
+                for (const k of prefix) {
+                  const [a, b] = [read(k, hi), read(k, lo)];
+                  if (a === b) continue;
+                  if (!(a > b)) disagreements.push(`${id}: ${hi.entrantId} (${k} ${a}) above ${lo.entrantId} (${k} ${b}) on ${prefix.join(" > ")}`);
+                  if (k !== "points") decidedBy.set(k, (decidedBy.get(k) ?? 0) + 1);
+                  break;
+                }
+                pairs++;
+              }
+              lotsDrawn += done.newLotsDraws.length;
+              if (at === 0) emptyCases++;
+              if (at === "5-mid") midRoundCases++;
+              sizes.add(size);
+              perSport.set(m.key, (perSport.get(m.key) ?? 0) + 1);
+              cases++;
+            }
+          }
+        }
+      });
+    });
+
+    const actual = Object.fromEntries([...digests].map(([k, h]) => [k, h.hex()]));
+    expect(disagreements.slice(0, 20), `${disagreements.length} disagreements with the pre-change reads`).toEqual([]);
+    // Anti-vacuity: every sport, every size, the empty table and the mid-round refold, every Swiss key deciding real pairs,
+    // and every 16.2 category and game result on some card.
+    expect(n).toBe(builtinModules.length);
+    expect(publicReads, "the exported reads, checked").toBeGreaterThan(0);
+    expect(perSport.size, "every sport checked").toBe(n);
+    expect([...sizes].sort((a, b) => a - b), "every field size").toEqual([...SMALL, ...LARGE]);
+    expect(emptyCases, "the empty table, ranked").toBeGreaterThan(0);
+    expect(midRoundCases, "a mid-round refold, ranked").toBeGreaterThan(0);
+    for (const k of SWISS_KEYS) expect(decidedBy.get(k) ?? 0, `adjacent pairs ${k} decided`).toBeGreaterThan(0);
+    for (const cat of ["played", "bye", "forfeit_win", "forfeit_loss", "absent", "absent_last"]) {
+      expect(categories.get(cat) ?? 0, `ledger cards of category ${cat}`).toBeGreaterThan(0);
+    }
+    for (const r of GAME_RESULTS) expect(results.get(r) ?? 0, `cards that are a ${r}`).toBeGreaterThan(0);
+    expect(lotsDrawn, "lots drawn for residual ties").toBeGreaterThan(0);
+    expect(cases, "every declared case ranked").toBe(declared);
+    expect(columns, "Swiss columns checked").toBeGreaterThan(0);
+    expect(pairs, "ranked pairs checked").toBeGreaterThan(0);
+    expect(Object.keys(actual), "one recording per sport and cfg").toEqual(Object.keys(RECORDED));
+    expect(new Set(Object.values(actual)).size, "the digests tell every sport-cfg apart").toBe(Object.keys(actual).length);
+    expect(actual).toEqual(RECORDED);
+  }, 300_000);
+});
