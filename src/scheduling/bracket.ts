@@ -470,13 +470,22 @@ export function lbDropGameRB6X2(m: number, games: number, i: number): number {
 // champion vs LB champion (RB6-X4), with an optional bracket-reset decider.
 // Drops are defined on the frame: byes never move one (RB6-X5).
 export function generateDoubleElim(opts: DoubleElimOptions): GeneratedBracket {
+  // RB6-E1, E2 (X-DE-16): below 2 entrants there is no double elimination to draw, so it is refused by name, never
+  // answered with an empty bracket. The one guard on the field's size; 2 and 3 are drawn below (RB6-E3, E4).
+  if (opts.entrants.length < 2) {
+    throw new EngineError("CONFIG_INVALID", "a double elimination needs at least 2 entrants", {
+      reason: "double_elim_needs_two",
+      entrants: opts.entrants.length,
+    });
+  }
   const wb = buildSingleElim({
     entrants: opts.entrants,
     ...(opts.seeds === undefined ? {} : { seeds: opts.seeds }),
     idPrefix: "wb",
     bracketTag: "WB",
   });
-  if (wb.finalId === undefined) return { fixtures: [...wb.fixtures], rounds: wb.rounds };
+  // Cannot be reached past the refusal above: a winners' bracket of 2 or more entrants always has a final.
+  if (wb.finalId === undefined) throw new Error("generateDoubleElim: a field of 2 or more drew no winners' bracket final");
 
   const fixtures: BracketFixtureGen[] = [...wb.fixtures];
   const k = wb.rounds; // WB depth = log2(size)
