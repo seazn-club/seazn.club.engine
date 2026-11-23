@@ -34,7 +34,8 @@ type Order = readonly TiebreakerKey[];
 // SPEC §5.10, the signed round-robin, league and group defaults (D5), one per sport key. The tennis order repeats
 // `h2h_two` after each step (OC3; ATP C.3, RBS:370-371).
 // Football: FIFA World Cup 26 Regulations Art. 13 — step 1 the head-to-head block, step 2 that block re-applied to the
-// teams still level (owner approval 2026-11-23), then overall goal difference, goals, team conduct, lots (RB2B-4).
+// teams still level (owner approval 2026-11-23), then overall goal difference, goals, team conduct, lots (RB2B-4). The
+// re-application repeats until stable, a named deviation (FB-TB-1): FIFA's text re-applies once.
 const FIFA2026: Order = ["points", "h2h_points", "h2h_diff", "h2h_for", "h2h_reapply", "diff", "for", "fair_play", "lots"];
 const SIGNED: Readonly<Record<string, Order>> = {
   football: FIFA2026,

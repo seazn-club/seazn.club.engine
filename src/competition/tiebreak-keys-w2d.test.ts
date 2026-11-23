@@ -107,7 +107,8 @@ function rankAll(results: readonly FixtureResult[], cascade: readonly Tiebreaker
 const BWF: TiebreakerKey[] = ["wins", "h2h_two", "set_diff", "h2h_two", "point_diff", "h2h_two", "lots"];
 const ITTF: TiebreakerKey[] = ["points", "h2h_points", "h2h_set_ratio", "h2h_point_ratio", "h2h_exclusion", "lots"];
 const ITTF_WITHOUT_EXCLUSION: TiebreakerKey[] = ["points", "h2h_points", "h2h_set_ratio", "h2h_point_ratio", "lots"];
-// FWC26 Art. 13 (owner approval 2026-11-23): step 2 re-applies the block to the teams it leaves level, as UEFA 20.01(d) does.
+// FWC26 Art. 13 (owner approval 2026-11-23): step 2 re-applies the block to the teams it leaves level, as UEFA 20.01(d) does;
+// repeating it until stable is a named deviation (FB-TB-1): FIFA's text re-applies once.
 const FIFA2026: TiebreakerKey[] = ["points", "h2h_points", "h2h_diff", "h2h_for", "h2h_reapply", "diff", "for", "fair_play", "lots"];
 // The block once, no re-application: football's fifa2026 until 2026-11-23.
 const H2H_ONCE: TiebreakerKey[] = ["points", "h2h_points", "h2h_diff", "h2h_for", "diff", "for", "fair_play", "lots"];

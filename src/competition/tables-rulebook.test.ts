@@ -35,6 +35,7 @@ type Order = readonly TiebreakerKey[];
 // FIFA World Cup 26 Regulations, Art. 13 (owner approval 2026-11-23): step 1 a)-c) head-to-head points, goal difference and
 // goals among the teams concerned; step 2 a)-c) "applied to the matches between the remaining teams only"; then d) overall
 // goal difference, e) overall goals, f) team conduct (fair play); step 3's world ranking is a drawing of lots here (RB2B-4).
+// Deviation (owner 2026-11-23): `h2h_reapply` repeats step 2 until no group shrinks, where FIFA's text applies it once.
 const FIFA2026: Order = ["points", "h2h_points", "h2h_diff", "h2h_for", "h2h_reapply", "diff", "for", "fair_play", "lots"];
 // Football's pre-W2d order (the plan's Anchors row), which `fifa2026` kept until 2026-11-23: the head-to-head block once.
 const FOOTBALL_PRE_W2D: Order = ["points", "h2h_points", "h2h_diff", "h2h_for", "diff", "for", "fair_play", "lots"];
@@ -352,6 +353,22 @@ const BOOK: Readonly<Record<string, Book>> = {
         splits: { Z: "h2h_for", X: "h2h_points", Y: "h2h_points", D: null },
         without: { at: 4, expect: ["Z", "Y", "X", "D"] },
         old: ["Z", "Y", "X", "D"],
+      },
+      {
+        title: "FB-TB-1 pins the DELIBERATE DEVIATION from FWC26 Art. 13 (owner 2026-11-23): four level, step 2 leaves two level, and the re-application repeats on those two (C beat D) → A, C, D, B; FIFA's text re-applies once and would give A, D, C, B",
+        // A, B, C, D 9 points: A 2-1 B, A 4-0 C, A 4-0 D, C 2-0 D, B 2-1 C, D 3-0 B; B, C 1-0 and D 3-0 over O1 and O2.
+        // Step 1 among the four: A 9 → first; B, C, D 3 points, GD −3, goals 3 each. Step 2 among B, C, D: 3 points each, GD
+        // C +1, D +1, B −2 → B last; C, D level on goals (3). Repeated on C, D alone: C beat D 2-0 → C (h2h_points). FIFA's
+        // single re-application stops there and d) decides: overall GD D +3, C −1 → D. Reachable only with four or more
+        // level in a table of five or more: in a group of four the pair's results against the rest cannot leave all four level.
+        // O1, O2 0 points, never met, GD −5 and no goals each → the stored draw O1, O2.
+        matches: [
+          fb("A", "B", 2, 1), fb("A", "C", 4, 0), fb("A", "D", 4, 0), fb("C", "D", 2, 0), fb("B", "C", 2, 1), fb("D", "B", 3, 0),
+          fb("B", "O1", 1, 0), fb("B", "O2", 1, 0), fb("C", "O1", 1, 0), fb("C", "O2", 1, 0), fb("D", "O1", 3, 0), fb("D", "O2", 3, 0),
+        ],
+        lots: [["O1", "O2"]],
+        expect: ["A", "C", "D", "B", "O1", "O2"],
+        splits: { A: "h2h_points", C: "h2h_points", D: "h2h_points", B: "h2h_diff", O1: "lots", O2: "lots" },
       },
       {
         title: "FB-TB-1 step 2 decides nothing between two who drew: d) overall goal difference ranks them (FWC26 Art. 13 step 2)",
