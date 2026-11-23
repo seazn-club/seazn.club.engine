@@ -1,8 +1,8 @@
 // W2b Task 6 (spec §5.3, engine half; Appendix A X-DW-4, X-DW-2, X-DE-1, TN-WO-1, CK-WO-1; plan D14). What the
-// competition layer does with W2b's two new results: a double walkover in a table and in a bracket, and a forfeit
-// loser in double elimination. Every expectation is the rulebook row written out here — the table rows are folded from
-// each sport's OWN `standingsDelta` (real producer) and read back through the engine's own readers (`RATIO_LEDGERS`,
-// `derivedMetricText`, `rankStandings`), never through the function under test.
+// competition layer does with W2b's two new results: a double walkover in a table and in a bracket, and a withdrawn
+// loser in double elimination (W6: a forfeit there is one loss, RB6-F1). Every expectation is the rulebook row written
+// out here — the table rows are folded from each sport's OWN `standingsDelta` (real producer) and read back through the
+// engine's own readers (`RATIO_LEDGERS`, `derivedMetricText`, `rankStandings`), never through the function under test.
 import { describe, expect, it } from "vitest";
 import { foldMatchWithStoppage, outcomeOf, playRecorded } from "../core/events.ts";
 import type { EntrantId, LineupPair, MatchOutcome } from "../core/types.ts";
@@ -14,6 +14,7 @@ import { builtinModules } from "../sports/index.ts";
 import { derivedMetricText, RATIO_LEDGERS } from "./display.ts";
 import { decidedInFor } from "./decided-in.ts";
 import { legacyPointsRule, payout } from "./points.ts";
+import type { BracketSlotRef } from "../scheduling/bracket.ts";
 import { bracketRanks, type BracketFixture, type BracketStage, type FinalPlace } from "./stage.ts";
 import { foldResults, resultsAmong, type FixtureResult, type StandingsRow } from "./standings.ts";
 import { ledgerOf, rankStandings } from "./tiebreakers.ts";
@@ -258,8 +259,8 @@ describe("X-DW-4 / TN-WO-1 / CK-WO-1: excluded keys move no ratio (spec §5.3: t
 // rounds follow the generator's own numbering (scheduling/bracket.ts): an 8-field double elimination has WB rounds
 // 0-2, LB rounds 3-6 and the grand final at 7.
 const seeds = (n: number) => new Map(Array.from({ length: n }, (_, i) => [`E${i + 1}`, i + 1] as const));
-/** W4 (X-FR-1): a strict order as places — the i-th id ranks i + 1. */
-const places = (...ids: string[]): FinalPlace[] => ids.map((entrantId, i) => ({ entrantId, rank: i + 1 }));
+/** Places written out, for a shape with a shared rank. */
+const ranked = (...pairs: readonly (readonly [string, number])[]): FinalPlace[] => pairs.map(([entrantId, rank]) => ({ entrantId, rank }));
 const fx = (id: string, round: number, home: string | undefined, away: string | undefined, winner: string | undefined, extra: Partial<BracketFixture> = {}): BracketFixture => {
   const loser = winner === undefined ? undefined : winner === home ? away : home;
   return {
@@ -270,56 +271,79 @@ const fx = (id: string, round: number, home: string | undefined, away: string | 
   };
 };
 
-describe("X-DE-1: in double elimination a forfeit loser is out, never drops (spec §5.3, W2b-R11)", () => {
+describe("X-DE-1 a withdrawn entrant is out and is never read as dropped (spec §5.3, W2b-R11; W6 RB6-F4, R7)", () => {
   const stage: BracketStage = { id: "de", kind: "double_elim", entrants: [...seeds(8).keys()], seeds: seeds(8) };
-  // E3 meets E2 in WB round 1. Everything else is the same in every variant.
-  const around = (wbR1g1: BracketFixture, lbR1g1: BracketFixture): BracketFixture[] => [
-    fx("wb-r0-0", 0, "E1", "E8", "E1", { bracket: "WB" }),
-    fx("wb-r0-1", 0, "E4", "E5", "E4", { bracket: "WB" }),
-    fx("wb-r0-2", 0, "E2", "E7", "E2", { bracket: "WB" }),
-    fx("wb-r0-3", 0, "E3", "E6", "E3", { bracket: "WB" }),
-    fx("wb-r1-0", 1, "E1", "E4", "E1", { bracket: "WB" }),
-    wbR1g1,
-    fx("wb-r2-0", 2, "E1", "E2", "E1", { bracket: "WB" }),
-    fx("lb-r0-0", 3, "E8", "E5", "E5", { bracket: "LB" }),
-    fx("lb-r0-1", 3, "E7", "E6", "E6", { bracket: "LB" }),
-    fx("lb-r1-0", 4, "E5", "E4", "E4", { bracket: "LB" }),
-    lbR1g1,
-    fx("lb-r2-0", 5, "E4", "E6", "E4", { bracket: "LB" }),
-    fx("lb-r3-0", 6, "E4", "E2", "E2", { bracket: "LB" }),
-    fx("gf", 7, "E1", "E2", "E1", { bracket: "GF", isFinal: true }),
-  ];
-  const forfeit = fx("wb-r1-1", 1, "E2", "E3", "E2", { bracket: "WB", status: "walkover", walkedOver: "loser" });
-  // The rulebook ranks (W2b-R11): E3 is out in WB round 1 — below everyone eliminated later, the LB round-3 losers too.
-  const OUT_IN_WB_R1 = ["E1", "E2", "E4", "E6", "E5", "E7", "E8", "E3"];
+  // A STORED pre-11 bracket: straight drops, the loser of WB game i (0-based round r ≥ 1) seated in LB game i, so E3,
+  // the loser of wb-r1-1, sits in lb-r1-1. The feeds below follow these rows' own ids — a stored bracket ranks by its
+  // stored edges, never by the W6 drop table (RB6-X2 applies to a new or rebuilt bracket only, ruling 295).
+  const W = (fixtureId: string): BracketSlotRef => ({ fixtureId, side: "winner" });
+  const L = (fixtureId: string): BracketSlotRef => ({ fixtureId, side: "loser" });
+  const FEEDS: Record<string, [BracketSlotRef, BracketSlotRef]> = {
+    "wb-r1-0": [W("wb-r0-0"), W("wb-r0-1")], "wb-r1-1": [W("wb-r0-2"), W("wb-r0-3")], "wb-r2-0": [W("wb-r1-0"), W("wb-r1-1")],
+    "lb-r0-0": [L("wb-r0-0"), L("wb-r0-1")], "lb-r0-1": [L("wb-r0-2"), L("wb-r0-3")],
+    "lb-r1-0": [W("lb-r0-0"), L("wb-r1-0")], "lb-r1-1": [W("lb-r0-1"), L("wb-r1-1")],
+    "lb-r2-0": [W("lb-r1-0"), W("lb-r1-1")], "lb-r3-0": [W("lb-r2-0"), L("wb-r2-0")], gf: [W("wb-r2-0"), W("lb-r3-0")],
+  };
+  // E3 meets E2 in wb-r1-1 (WB round 2). Everything else is the same in every variant.
+  const around = (wbR1g1: BracketFixture, lbR1g1: BracketFixture, lbR2g0 = fx("lb-r2-0", 5, "E4", "E6", "E4", { bracket: "LB" })): BracketFixture[] =>
+    [
+      fx("wb-r0-0", 0, "E1", "E8", "E1", { bracket: "WB" }),
+      fx("wb-r0-1", 0, "E4", "E5", "E4", { bracket: "WB" }),
+      fx("wb-r0-2", 0, "E2", "E7", "E2", { bracket: "WB" }),
+      fx("wb-r0-3", 0, "E3", "E6", "E3", { bracket: "WB" }),
+      fx("wb-r1-0", 1, "E1", "E4", "E1", { bracket: "WB" }),
+      wbR1g1,
+      fx("wb-r2-0", 2, "E1", "E2", "E1", { bracket: "WB" }),
+      fx("lb-r0-0", 3, "E8", "E5", "E5", { bracket: "LB" }),
+      fx("lb-r0-1", 3, "E7", "E6", "E6", { bracket: "LB" }),
+      fx("lb-r1-0", 4, "E5", "E4", "E4", { bracket: "LB" }),
+      lbR1g1,
+      lbR2g0,
+      fx("lb-r3-0", 6, "E4", "E2", "E2", { bracket: "LB" }),
+      fx("gf", 7, "E1", "E2", "E1", { bracket: "GF", isFinal: true }),
+    ].map((row) => {
+      const feeds = FEEDS[row.id];
+      return feeds === undefined ? row : { ...row, homeFrom: feeds[0], awayFrom: feeds[1] };
+    });
+  const withdrawn = fx("wb-r1-1", 1, "E2", "E3", "E2", { bracket: "WB", status: "walkover", walkedOver: "loser" });
 
-  it("X-DE-1: E3 walked over in WB round 1 is ranked out in that round — with its LB seat dead, as seating leaves it", () => {
+  it("X-DE-1: E3 withdrawn at wb-r1-1 takes LB round 2's place (the seat it vacates) with E5 — 5th, shared — its LB seat dead", () => {
+    // RB6-R7: E3 ranks at the LB round of the seat it vacates, lb-r1-1 (LB round 2), with that round's other loser E5
+    // (lb-r1-0); RB6-R3: 1 + four ranked better. E6 4th (lb-r2-0), E4 3rd (the LB final), E7 and E8 7= (LB round 1).
+    // differential: today E3 is last, 8th (out at the WB round's own round, below every LB loser).
     const deadSeat = fx("lb-r1-1", 4, "E6", undefined, "E6", { bracket: "LB", status: "walkover" });
-    expect(bracketRanks(stage, around(forfeit, deadSeat))).toEqual(places(...OUT_IN_WB_R1));
+    const want = ranked(["E1", 1], ["E2", 2], ["E4", 3], ["E6", 4], ["E3", 5], ["E5", 5], ["E7", 7], ["E8", 7]);
+    expect(bracketRanks(stage, around(withdrawn, deadSeat))).toEqual(want);
   });
 
-  it("X-DE-1: and still in WB round 1 when a losers'-bracket row names it as a loser — ranks never read a drop", () => {
-    // A pre-W2b row that seated E3 and recorded the LB match as lost — played, or walked over a second time.
+  it("X-DE-1: a stale LB row that still seats E3 never moves it — the earliest walkover, by the LB round of the seat it vacates", () => {
+    // Pre-W2b rows that seated E3 and recorded it on: lb-r1-1 E6 v E3 won by E3, then lb-r2-0 E4 v E3 won by E4 —
+    // played, or walked over a second time. The earliest walkover wins, earliest by the resolved LB round of the seat
+    // vacated (raw rounds do not compare across lanes), so E3 still takes LB round 2's place, now with E5 and E6.
+    // RB6-R7, RB6-R3 (three ranked better; ruling 306(c)): E1, E2, E4, then E3, E5, E6 at 4th, then E7, E8 at 7th.
+    // E3 alone is 4th under a "latest loss" reading too: E5 and E6 at 4th, not 5th, are what tell the two apart.
+    const lbR1 = fx("lb-r1-1", 4, "E6", "E3", "E3", { bracket: "LB" });
     const stale = [
-      fx("lb-r1-1", 4, "E6", "E3", "E6", { bracket: "LB" }),
-      fx("lb-r1-1", 4, "E6", "E3", "E6", { bracket: "LB", status: "walkover", walkedOver: "loser" }),
+      fx("lb-r2-0", 5, "E4", "E3", "E4", { bracket: "LB" }),
+      fx("lb-r2-0", 5, "E4", "E3", "E4", { bracket: "LB", status: "walkover", walkedOver: "loser" }),
     ];
+    const want = ranked(["E1", 1], ["E2", 2], ["E4", 3], ["E3", 4], ["E5", 4], ["E6", 4], ["E7", 7], ["E8", 7]);
     let checked = 0;
     for (const row of stale) {
       // Either order of the rows: the elimination round is the EARLIEST walkover, not the first one listed.
-      for (const fixtures of [around(forfeit, row), around(forfeit, row).reverse()]) {
-        expect(bracketRanks(stage, fixtures), JSON.stringify(row)).toEqual(places(...OUT_IN_WB_R1));
+      for (const fixtures of [around(withdrawn, lbR1, row), around(withdrawn, lbR1, row).reverse()]) {
+        expect(bracketRanks(stage, fixtures), JSON.stringify(row)).toEqual(want);
         checked++;
       }
     }
     expect(checked).toBe(4);
   });
 
-  it("X-DE-1 positive pair: the same WB round-1 fixture as a played win drops E3, who goes out in LB round 4", () => {
+  it("X-DE-1 positive pair: the same wb-r1-1 as a played loss drops E3, who wins lb-r1-1 and loses lb-r2-0 — 4th, alone", () => {
+    // RB6-R2: 4th is the loser of LB 3.1 (lb-r2-0). E5 and E6 (LB round 2) 5=, against 5th shared for the withdrawal.
     const win = fx("wb-r1-1", 1, "E2", "E3", "E2", { bracket: "WB" });
-    const lbLoss = fx("lb-r1-1", 4, "E6", "E3", "E6", { bracket: "LB" });
-    // E3 and E5 both out in round 4: seed order.
-    expect(bracketRanks(stage, around(win, lbLoss))).toEqual(places("E1", "E2", "E4", "E6", "E3", "E5", "E7", "E8"));
+    const rows = around(win, fx("lb-r1-1", 4, "E6", "E3", "E3", { bracket: "LB" }), fx("lb-r2-0", 5, "E4", "E3", "E4", { bracket: "LB" }));
+    expect(bracketRanks(stage, rows)).toEqual(ranked(["E1", 1], ["E2", 2], ["E4", 3], ["E3", 4], ["E5", 5], ["E6", 5], ["E7", 7], ["E8", 7]));
   });
 });
 

@@ -134,7 +134,7 @@ describe("X-PL-3 the plate holds everyone's first loss: every round-1 loser, plu
     // it is no first loss either (nothing excluded).
     const finalToE2 = (home: string, away: string): string => (home === "e2" || away === "e2" ? "e2" : home < away ? home : away);
     const walkedThenLost = firstLossField(
-      played(6, { forfeit: new Map([["se-r1-i0", "e4"]]), winner: finalToE2 }),
+      played(6, { withdraw: new Map([["se-r1-i0", "e4"]]), winner: finalToE2 }),
     );
     expect(asSet(who(walkedThenLost.losers))).toEqual(asSet(["e5", "e6"]));
     expect(walkedThenLost).toMatchObject({ complete: true, excluded: [], pending: [] });
@@ -288,7 +288,7 @@ describe("X-PL-4 a first loss by walkover, withdrawal, retirement or disqualific
     // go to seed (e8, e7 lose). e5 won round 1 without playing, so its first match is round 2, which it loses to e1: a
     // first loss, played (RB4-P1). e2 walks over the dead line.
     const field = firstLossField(
-      played(8, { forfeit: new Map([["se-r0-i1", "e4"]]), doubleWalkover: new Set(["se-r0-i2"]) }),
+      played(8, { withdraw: new Map([["se-r0-i1", "e4"]]), doubleWalkover: new Set(["se-r0-i2"]) }),
     );
     expect(asSet(who(field.losers))).toEqual(asSet(["e8", "e7", "e5"]));
     expect(field.excluded).toEqual([
@@ -301,7 +301,7 @@ describe("X-PL-4 a first loss by walkover, withdrawal, retirement or disqualific
 
   it("X-PL-4 excluded: a bye holder whose first match (round 2) is a forfeit or a double walkover; its opponent, who played round 1, is not", () => {
     // n=6: e1 holds a bye; round 2 is e1 v e4 (e4 beat e5 in round 1).
-    const forfeit = firstLossField(played(6, { forfeit: new Map([["se-r1-i0", "e1"]]) }));
+    const forfeit = firstLossField(played(6, { withdraw: new Map([["se-r1-i0", "e1"]]) }));
     expect(forfeit.excluded).toEqual([{ entrantId: "e1", fixtureId: "se-r1-i0", round: 1 }]);
     expect(who(forfeit.losers)).not.toContain("e1");
     const both = firstLossField(played(6, { doubleWalkover: new Set(["se-r1-i0"]) }));
@@ -465,7 +465,7 @@ describe("X-PL-4 a first loss by withdrawal on a dead seat does not enter the pl
     // withdraws while e1 v e8 is unplayed: its se-r1-i0 seat is dead, and e1, arriving, walks over it. e5's first match
     // (it won round 1 without playing) is that walkover, a loss by withdrawal: excluded too. Round 1's played lines go to
     // seed: e8, e6, e7 lose (RB4-P1). differential: today e5's line se-r0-i1 is pending forever.
-    const rows = withFeeds(knockout(8), played(8, { forfeit: new Map([["se-r0-i1", "e4"]]) }));
+    const rows = withFeeds(knockout(8), played(8, { withdraw: new Map([["se-r0-i1", "e4"]]) }));
     expect(rowAt(rows, "se-r1-i0")).toMatchObject({ home: "e1", away: "e5", awayFrom: { fixtureId: "se-r0-i1", side: "winner" } });
     const done = swapping(rows, { "se-r1-i0": (row) => walkedOverDeadSeat(row, "away") });
     expect(firstLossField(done)).toEqual({

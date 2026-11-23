@@ -732,6 +732,9 @@ interface PlayedBracketStage {
   finalRanks: FinalPlace[];
 }
 
+// The rows it ranks carry neither the generator's feeds nor `conditional`. A double elimination ranks a winners'-bracket
+// exit by the losers'-bracket fixture its loser feed names (W6, RB6-R7); every match here is played, so every exit is an
+// LB loss and the ranks are right, but a walkover or withdrawal added here would rank a WB exit by the fallback (last).
 function playBracketStage(
   ctx: SimContext,
   stageId: string,
