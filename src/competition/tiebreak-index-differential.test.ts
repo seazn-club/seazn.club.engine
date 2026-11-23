@@ -7,7 +7,7 @@
 //      every call. Every row's materialised Swiss column is re-read through them, and the ranked order must be
 //      non-increasing on the cascade's leading points-and-Swiss keys read through them (spec 05 §4: a plain key orders
 //      each class the keys before it left level).
-//   2. RECORDED: a sha-256 of completeTableStage's whole output (events, tables, new lots draws), one per sport and cfg over
+//   2. RECORDED: a 128-bit digest (`digestOf`) of completeTableStage's whole output (events, tables, new lots draws), one per sport and cfg over
 //      all of that cfg's cases, recorded by engine 10.0.3 BEFORE the change, over this same seeded sweep.
 // The sweep: every sport in the registry (forEachSport); every declared cfg at 8, 9 and 33 entrants, and each sport's
 // first declared cfg at 100, 257 and 500 (the S5 sizes; the cfg moves only the points rule and the chain, which the small
@@ -18,7 +18,6 @@
 // walkovers (16.2.2, 16.2.4), draws where the sport's Swiss stage reaches one, and the level classes a Swiss table is
 // full of. Results come through the producers the app runs: the stage rule's `payout` over the result, the module's own
 // standingsDelta for a bye or a walkover, and `unplayedSidesOf` for the unplayed side(s).
-import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { EngineError } from "../core/errors.ts";
 import { MatchOutcome, type EntrantId, type StandingsDelta } from "../core/types.ts";
@@ -373,57 +372,88 @@ function orderedPrefix(chain: readonly TiebreakerKey[]): ("points" | SwissKey)[]
 
 const GAME_RESULTS: readonly GameResult[] = ["win", "draw", "loss"];
 
+/** The digest RECORDED is checked with: a pure streaming 128-bit string hash (cyrb128's mixing, four 32-bit lanes).
+ *  `node:crypto` is out of bounds under src/ (scripts/engine-boundary.ts, whose one exemption is testkit/golden.ts). It is
+ *  no cryptographic hash and needs none: it guards against drift, not an adversary. That it tells the sport-cfgs apart
+ *  is asserted below, so a hash that collapsed to a constant could not pass the recording vacuously. */
+function digestOf(): { update: (text: string) => void; hex: () => string } {
+  let [h1, h2, h3, h4] = [1779033703, 3144134277, 1013904242, 2773480762];
+  return {
+    update: (text) => {
+      for (let i = 0; i < text.length; i++) {
+        const k = text.charCodeAt(i);
+        h1 = h2 ^ Math.imul(h1 ^ k, 597399067);
+        h2 = h3 ^ Math.imul(h2 ^ k, 2869860233);
+        h3 = h4 ^ Math.imul(h3 ^ k, 951274213);
+        h4 = h1 ^ Math.imul(h4 ^ k, 2716044179);
+      }
+    },
+    hex: () => {
+      let [a, b, c, d] = [h1, h2, h3, h4];
+      a = Math.imul(c ^ (a >>> 18), 597399067);
+      b = Math.imul(d ^ (b >>> 22), 2869860233);
+      c = Math.imul(a ^ (c >>> 17), 951274213);
+      d = Math.imul(b ^ (d >>> 19), 2716044179);
+      a ^= b ^ c ^ d;
+      b ^= a;
+      c ^= a;
+      d ^= a;
+      return [a, b, c, d].map((x) => (x >>> 0).toString(16).padStart(8, "0")).join("");
+    },
+  };
+}
+
 /** Recorded by engine 10.0.3 (bf70530, the pre-change tiebreakers.ts) over exactly this sweep: per sport and cfg, the
- *  sha-256 of every case's `${id}\n${JSON.stringify(completeTableStage(...))}\n`, in sweep order. */
+ *  `digestOf` every case's `${id}\n${JSON.stringify(completeTableStage(...))}\n`, in sweep order. */
 const RECORDED: Readonly<Record<string, string>> = {
-  "football/(schema default)": "37f10d46ac5da754f04c3024afc33ede986d22f36d02a61a75fa014629274ddf",
-  "football/11-a-side": "d5bc75ed3c6b51ea77c42fca3e41ee52ad38a5bc9a773b4e1aada991d1b2cf78",
-  "football/youth": "98dae159e89524f717381023b2bbcc14761e0a327939a382304d0129800630ea",
-  "football/small-sided": "9be3eb694ff24d82eb6084f100fd9d47be6f84bb42c5a24b2440fca338c55762",
-  "football/mini-soccer": "f1e7da2664e2bba5433fedd97cd6b4b1ebe8635d07ee1eeb113856c213c3263e",
-  "cricket/(schema default)": "3a52e15cf5788d4c5dae258a3cb475b03cf3eea40bb8fb08346f65655d8ff09b",
-  "cricket/t20": "4ef94bdeed5f24f49400369ccd262779b10f09e20772b824d9686db342d3b106",
-  "cricket/odi": "2334f1ce9e8f47ee24a25b39a08af2e758cadeb879bfbd19c91719818dd7086b",
-  "cricket/hundred": "83643f7fc9dac41a7cf745b348a209afe613f45d0ca94bfddf297bb9a573edd6",
-  "cricket/test": "bcee4884462ea49eafd32c899c85b5fb419e360e6767859834e5ab9563ff0861",
-  "boardgame/(schema default)": "4ae198ec80436ef6257d4c5d883f6354bc7d9e333ea3c10010838bea1c2ea7d8",
-  "boardgame/classical": "1d1e031ac2a2b002c08c5874480becba3c92741811306bf1af5dc56137a91df3",
-  "boardgame/rapid": "10ef4e96682e70b760272d0ffd255e1153a401a9328eabba5910ecab22e0ff77",
-  "boardgame/blitz": "fdc218e23a559c43921d66fa65c605fa0e07e335e4cb460f1c2c973646fbc669",
-  "carrom/(schema default)": "c3cfe5abd242b8bbadc5ed8285a9c589a8d77629cb67bb407e0f9283d2f91f3b",
-  "carrom/icf": "99456b658befd8321e12a78653ce876351bd5b2ae316a904ff1c577e3b61a816",
-  "carrom/club-29": "362f1351b0de05a693fc373b01feb3abd7a1fd0181240bbcb21ec399858e9230",
-  "generic/win_loss": "436468e9a8a58ee29b53d06735d5a7510a43300877bd39d3e33acc76e106eac0",
-  "generic/score": "45fda6484c38ddf1071b0c754ddbce3018ae4979a47c401a97de891ffc8d237d",
-  "volleyball/(schema default)": "caf709f317995a097d214f71ad4cd54f5ff794ca8154434343cf2240c432d143",
-  "volleyball/indoor": "7826893357d595850b27869a5d4d0fe3e9e772d61e83d1ba6734ae4820f92a31",
-  "volleyball/beach": "9df87e39e2dfffa5d6b5a3e5fd8e6c3c611a358ab168f4dffd2d4a5b1d02ed80",
-  "badminton/(schema default)": "c7ffffa7b588a0697c9ab53c45b1038a2428fde2dc3c501a6a93dbd9f638f1cd",
-  "badminton/bwf": "a6fb2f2f2f2af36f771038f8f6ef7546be56b3765fec8a9eb2be5d3f7f496ef0",
-  "badminton/bwf-3x15": "61ae7ac3d45aeca5f02f8520c68983948c7fb96208f2eda070a2015ebe4631c2",
-  "badminton/short": "159504c9ee072638da9c439034c831ea8584512f92c83bf82e45a1960cd20c3f",
-  "tabletennis/(schema default)": "0298f843a0c0f753dd576da96771a9181ed27ae2aabb52591b005ae18fce6b28",
-  "tabletennis/bo5": "624d2f3667899737b4c557fbd6151efc06c79b13f9b4643cbb7d1c7ba04480fc",
-  "tabletennis/bo7": "cde6222510e98d1b0f46fac7daab284866e7464616ea16f0909c1504c9b22732",
-  "tabletennis/hardbat-21": "c82c2383a2936d50f742deb980be8d7f51a77a274159e67640756c567f86d884",
-  "tennis/(schema default)": "e1cd4e63588796c6afca95078cc9971d6f81d789176efd1264912b786274a0a0",
-  "tennis/tour": "f2ea826e38c2c0ed8f77c175a105f245c85156aeb4a824493f80805ccb063ff7",
-  "tennis/grand-slam": "25b9bd8f8d103d9949446ae8c1819033b06b07f8cbe4b657337c7ca1c3e89826",
-  "tennis/fast4": "44ee3e24e936f041e35cae6851d2e777d7323f87a39714afd5153df14a3926cf",
-  "tennis/doubles-noad-mtb10": "c3f067a77327c9b91a5de662a121e7a78e4cf29df939d80d0438c35474204278",
-  "tennis/short-sets": "7f66923fd1b42bfb48cdd64b1d34e899b730df9dbe035b80f320824092ff0674",
-  "icehockey/(schema default)": "636ccf98661ae210c9abe9bf370c58da306e666a3531279a75848ffadda3c536",
-  "icehockey/iihf": "8857655041e9ed79ab4fc4504b1c3da16b1043fe080b23f22e679cfd2d81e565",
-  "icehockey/recreational": "dfe3f670b7f4c20aee248f9e51f7eb46b6d1e71f5c46a6657ff7fe280209f158",
-  "hockey/(schema default)": "d5acba1edc2715ecb84eae4c5605e6843220a9760f8c9f02b3632b9b4f04ab7f",
-  "hockey/fih-outdoor": "e3d9cbde400f0eb536d8de044271230389fa3b3019c833dd5ab4f56f97b95443",
-  "hockey/fih-shootout": "d5c2d11347b664801b7fc988b95e63d841261927ec7465ef23895984f4eae7f9",
-  "hockey/youth": "b3f2cfbfd74cf1d6c1884871f802182a36ba5ae5c9604997e6410227d119b0f5",
+  "football/(schema default)": "6a37f858704a0d44806835e32339209c",
+  "football/11-a-side": "02b50e3066743ce9a5826d6eed96da7b",
+  "football/youth": "76a7580d9a27ae95bd03d3aef215e71f",
+  "football/small-sided": "cb105aad462a45c28cab3c37cf75b68e",
+  "football/mini-soccer": "206dbe47c5334d2b4f3ff44f69494291",
+  "cricket/(schema default)": "88d66897a829b8d42c33f80c0a905a9b",
+  "cricket/t20": "354628da991a1bcfaa40f6d04451db24",
+  "cricket/odi": "b3fe505fc9898148e82640a6a790ed7f",
+  "cricket/hundred": "473d170f285993d0f017fd313d38b98c",
+  "cricket/test": "f3c08aaaa527a7b3088a546e24da98c5",
+  "boardgame/(schema default)": "0a985da909f6d1650f4796597270b708",
+  "boardgame/classical": "c1b58fb4f0726374a0925c88343bd23b",
+  "boardgame/rapid": "0443aa0ce7df985a05044648a53c2e4e",
+  "boardgame/blitz": "114719f93fc7d9da8049037ef4f0a77c",
+  "carrom/(schema default)": "87d91d2195a5ebff2371b5f3fde0f514",
+  "carrom/icf": "5de80c2acdb33de8aae6c1c729f48d0c",
+  "carrom/club-29": "bff95cb0937f47a3c838283ca5111dae",
+  "generic/win_loss": "2459a812404a49a79cd2ac5bfa167031",
+  "generic/score": "819401748dda78f484044ce14ffc9755",
+  "volleyball/(schema default)": "cdad7b1190f75b813632d9094cd39768",
+  "volleyball/indoor": "fbee04b08dbfa36fc7d3971cca459628",
+  "volleyball/beach": "39c3345503d36a866e20ba3941238a47",
+  "badminton/(schema default)": "b7894ac84700595dcbde51e820d86001",
+  "badminton/bwf": "58021dcd1f0c0481714785b5dc47aed3",
+  "badminton/bwf-3x15": "d51279720a723a43ce873d50c1c02a45",
+  "badminton/short": "c78d283581ca074a8d724897e9e24a36",
+  "tabletennis/(schema default)": "19c6305b8d9faf3f00c8279f0652ff93",
+  "tabletennis/bo5": "ed7fb0c9340faaaed5ff8b7d10025c65",
+  "tabletennis/bo7": "79a7d02164d8afc7a49dbe401e940cc1",
+  "tabletennis/hardbat-21": "44529d2ca78ee6a9dd6983e7924a3c6d",
+  "tennis/(schema default)": "13dbb141ba9e520a24f9096abbabf6e0",
+  "tennis/tour": "b93712240470f9e09a4f97ce59b8c12f",
+  "tennis/grand-slam": "68f82d333e406864567090838f8410bd",
+  "tennis/fast4": "289ede2f9fdf5c343283730e086be120",
+  "tennis/doubles-noad-mtb10": "07f27954e75e5af15adf73b0563f3f01",
+  "tennis/short-sets": "c67057a107eff5bdbc3035e371f7fd8e",
+  "icehockey/(schema default)": "2e1585c5bda02acfd0ca561c2b62297e",
+  "icehockey/iihf": "549f72ddd15b535b6ff38aba69e9a79f",
+  "icehockey/recreational": "33e8fafd4878756e5631113cb33e7c01",
+  "hockey/(schema default)": "28c9f95bc15463b35af887046916b7d5",
+  "hockey/fih-outdoor": "754b01be098b41a8371bbd45a02faa02",
+  "hockey/fih-shootout": "f91237babd772a9f85979f9c430bc922",
+  "hockey/youth": "d7ceb609f257179171581170b9422ffd",
 };
 
 describe("S5: the Swiss tiebreak reads are byte-identical to engine 10.0.3 (every sport, seeded sweep up to 500 entrants; counted)", () => {
   it("every row's Swiss column equals the pre-change read, the order is non-increasing on the chain's points-and-Swiss prefix read the pre-change way, and each sport-cfg's whole output hashes to its 10.0.3 recording", () => {
-    const digests = new Map<string, ReturnType<typeof createHash>>();
+    const digests = new Map<string, ReturnType<typeof digestOf>>();
     let cases = 0;
     let declared = 0; // the sweep's size, read off the registry: per declared cfg its sizes x both chains x every AT
     let emptyCases = 0;
@@ -445,7 +475,7 @@ describe("S5: the Swiss tiebreak reads are byte-identical to engine 10.0.3 (ever
       declaredCfgs(m as never).forEach(({ name, cfg }, cfgIndex) => {
         const s = sportOf(m, name, cfg);
         const key = `${m.key}/${name}`;
-        const hash = createHash("sha256");
+        const hash = digestOf();
         digests.set(key, hash);
         const fieldSizes: readonly number[] = cfgIndex === 0 ? [...SMALL, ...LARGE] : SMALL;
         declared += fieldSizes.length * 2 * AT.length;
@@ -514,7 +544,7 @@ describe("S5: the Swiss tiebreak reads are byte-identical to engine 10.0.3 (ever
       });
     });
 
-    const actual = Object.fromEntries([...digests].map(([k, h]) => [k, h.digest("hex")]));
+    const actual = Object.fromEntries([...digests].map(([k, h]) => [k, h.hex()]));
     expect(disagreements.slice(0, 20), `${disagreements.length} disagreements with the pre-change reads`).toEqual([]);
     // Anti-vacuity: every sport, every size, the empty table and the mid-round refold, every Swiss key deciding real pairs,
     // and every 16.2 category and game result on some card.
@@ -534,6 +564,7 @@ describe("S5: the Swiss tiebreak reads are byte-identical to engine 10.0.3 (ever
     expect(columns, "Swiss columns checked").toBeGreaterThan(0);
     expect(pairs, "ranked pairs checked").toBeGreaterThan(0);
     expect(Object.keys(actual), "one recording per sport and cfg").toEqual(Object.keys(RECORDED));
+    expect(new Set(Object.values(actual)).size, "the digests tell every sport-cfg apart").toBe(Object.keys(actual).length);
     expect(actual).toEqual(RECORDED);
   }, 300_000);
 });
