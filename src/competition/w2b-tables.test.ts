@@ -409,6 +409,6 @@ describe("X-DW-2: a double walkover in a bracket puts both sides out in its roun
     ];
     for (const row of oneSided) expect(() => bracketRanks(stage, field(row)), JSON.stringify(row)).toThrow(/double walkover .*is missing a side/);
     const noLoser = fx("sf-1", 1, "E2", undefined, "E2", { status: "walkover", walkedOver: "loser" });
-    expect(() => bracketRanks(stage, field(noLoser))).toThrow(/forfeit .*names no loser/);
+    expect(() => bracketRanks(stage, field(noLoser))).toThrow(/walkover out of the stage .*names no loser/);
   });
 });

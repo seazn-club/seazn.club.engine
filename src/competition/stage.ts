@@ -910,7 +910,7 @@ function decidingFinal(fixtures: readonly BracketFixture[]): { fixture: BracketF
 }
 
 // The entrants a `walkedOver` fixture puts out. Assumptions are guards: a double walkover decided nobody, so a row that
-// names a winner or a loser is a wiring bug; a forfeit always names who forfeited.
+// names a winner or a loser is a wiring bug; a walkover out of the stage always names who went out.
 function walkedOverSides(fixture: BracketFixture): EntrantId[] {
   if (fixture.walkedOver === "both") {
     if (fixture.winner !== undefined || fixture.loser !== undefined) {
@@ -923,7 +923,7 @@ function walkedOverSides(fixture: BracketFixture): EntrantId[] {
     return [fixture.home, fixture.away];
   }
   if (fixture.loser === undefined) {
-    throw new Error(`bracket fixture ${fixture.id}: a forfeit (walkedOver "loser") names no loser`);
+    throw new Error(`bracket fixture ${fixture.id}: a walkover out of the stage (walkedOver "loser": withdrawn, disqualified, or a knockout forfeit) names no loser`);
   }
   return [fixture.loser];
 }
@@ -1105,10 +1105,12 @@ export function bracketRanks(
     for (const id of [fixture.home, fixture.away]) if (id !== undefined && !outAt.has(id)) inPlay.add(id);
   }
   // W6 (RB6-G7, §9): while the reset is owed and has decided nothing (`decidingFinal` crowned nobody), both finalists are
-  // still in the stage with one loss each, whether or not the reset row seats them.
+  // still in the stage with one loss each, whether or not the reset row seats them. Once the reset has decided something
+  // the title places both, and placed entrants never reach the in-play block, so the owed test alone is enough; owed
+  // means GF1 names a winner and a loser (`resetReading`), so neither id is undefined here.
   const reset = resetReading(fixtures);
-  if (reset?.owed === true && decided === undefined) {
-    for (const id of [reset.grandFinal.winner, reset.grandFinal.loser]) if (id !== undefined) inPlay.add(id);
+  if (reset?.owed === true) {
+    for (const id of [reset.grandFinal.winner, reset.grandFinal.loser]) inPlay.add(id as EntrantId);
   }
 
   const seedOf = (id: EntrantId): number => stage.seeds?.get(id) ?? Number.MAX_SAFE_INTEGER;

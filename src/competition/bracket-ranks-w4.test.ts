@@ -833,26 +833,36 @@ function vacatedLbRounds(rows: readonly BracketFixture[]): Map<string, number> {
  *  above them. W6 (RB6-R3, R7): in a double elimination an entrant out at a walkover ranks at the LB round of the seat
  *  they vacate, and a raw round does not order two lanes, so the rank relation is read against THAT round: an entrant
  *  seated in an LB fixture of the same round ranks no worse (that round's losers share the place), one seated in a later
- *  LB round or the grand final strictly better (out later, or not out at all), and a later winners'-bracket or earlier
- *  LB fixture asks nothing of the ranks. Each strict comparison made in a double elimination is counted in `strictSeen`.
- *  Returns how many (out entrant, later fixture) pairs it checked. */
-function expectRanksAndSeatsAgree(stage: BracketStage, rows: readonly BracketFixture[], what: string, strictSeen?: { count: number }): number {
+ *  LB round or the grand final strictly better (out later, or not out at all), and an earlier LB fixture asks nothing of
+ *  the ranks. A winners'-bracket fixture is read at the LB round its LOSER feed names (RB6-X1, X2): whoever sits in it
+ *  goes out no earlier than that round, so a later one is strict and the same one level (Task 6 review m4). Each
+ *  comparison made in a double elimination is counted in `deSeen` (strict, level). Returns how many (out entrant, later
+ *  fixture) pairs it checked. */
+function expectRanksAndSeatsAgree(stage: BracketStage, rows: readonly BracketFixture[], what: string, deSeen?: { strict: number; level: number }): number {
   const rankOfId = rankOf(bracketRanks(stage, rows));
   const vacated = stage.kind === "double_elim" ? vacatedLbRounds(rows) : undefined;
+  // The LB round a fixture's seats go out no earlier than: an LB fixture's own round, a WB fixture's loser-feed round.
+  const lbRoundOf = (f: BracketFixture): number | undefined =>
+    f.bracket === "LB"
+      ? f.round
+      : f.bracket === "WB"
+        ? rows.find((r) => r.bracket === "LB" && [r.homeFrom, r.awayFrom].some((ref) => ref?.fixtureId === f.id && ref.side === "loser"))?.round
+        : undefined;
   let checked = 0;
   for (const [id, round] of walkedOutAt(rows)) {
     const seatRound = vacated?.get(id);
     if (vacated !== undefined && seatRound === undefined) throw new Error(`${what}: ${id} vacated no LB seat`);
     for (const f of rows.filter((row) => row.round > round)) {
       expect([f.home, f.away], `${what}: ${id} (out at round ${round}) is seated in ${f.id}`).not.toContain(id);
-      const strict = seatRound === undefined || f.bracket === "GF" || (f.bracket === "LB" && f.round > seatRound);
-      const level = seatRound !== undefined && f.bracket === "LB" && f.round === seatRound;
+      const lbRound = lbRoundOf(f);
+      const strict = seatRound === undefined || f.bracket === "GF" || (lbRound !== undefined && lbRound > seatRound);
+      const level = seatRound !== undefined && lbRound === seatRound;
       for (const later of [f.home, f.away]) {
         if (later === undefined || !(strict || level)) continue;
         const at = `${what}: ${later} (seated in ${f.id}) ranks above ${id}`;
         if (strict) expect(rankOfId[later] ?? NaN, at).toBeLessThan(rankOfId[id] ?? NaN);
         else expect(rankOfId[later] ?? NaN, `${at} or level`).toBeLessThanOrEqual(rankOfId[id] ?? NaN);
-        if (strict && seatRound !== undefined && strictSeen !== undefined) strictSeen.count++;
+        if (seatRound !== undefined && deSeen !== undefined) deSeen[strict ? "strict" : "level"]++;
       }
       checked++;
     }
@@ -890,11 +900,11 @@ describe("X-FR-3 a walkover loser is out at that fixture, so ranks and seats agr
     const { stage, rows } = knockout(8, { doubleWalkover: new Set(["se-r0-i1"]) });
     expect(completeBracketStage(stage, rows).finalRanks).toEqual(places("E1", "E2", "E3", "E4", "E5", "E6", "E7", "E8"));
     // Ranks and seats agree, swept over every non-final fixture of an 8-draw with a play-off and of a double elimination
-    // (its losers'-bracket seats), each walked over three ways: home forfeits, away forfeits, both (B3-10: a forfeiter's
-    // onward LOSER feeds are dead too).
+    // (its losers'-bracket seats), each walked over three ways: home withdraws, away withdraws, both (B3-10: a withdrawn
+    // entrant's onward LOSER feeds are dead too).
     let brackets = 0;
     let pairs = 0;
-    const strictInDoubleElim = { count: 0 };
+    const inDoubleElim = { strict: 0, level: 0 };
     const sweeps: [string, BracketStage["kind"], () => GeneratedBracket][] = [
       ["knockout 8 + play-off", "knockout", () => generateSingleElim({ entrants: ids(8), seeds: seedsOf(ids(8)), thirdPlace: true })],
       ["double elimination 8", "double_elim", () => generateDoubleElim({ entrants: ids(8), seeds: seedsOf(ids(8)), bracketReset: true })],
@@ -917,7 +927,7 @@ describe("X-FR-3 a walkover loser is out at that fixture, so ranks and seats agr
           // The seat a mode removes is only the driver's: the fixture must still be seated as the played-out one.
           const at = walked.find((row) => row.id === f.id);
           expect([at?.home, at?.away], `${what} ${f.id} ${mode}`).toEqual([f.home, f.away]);
-          pairs += expectRanksAndSeatsAgree(sweepStage, walked, `${what} ${f.id} ${mode}`, strictInDoubleElim);
+          pairs += expectRanksAndSeatsAgree(sweepStage, walked, `${what} ${f.id} ${mode}`, inDoubleElim);
           brackets++;
         }
       }
@@ -926,7 +936,7 @@ describe("X-FR-3 a walkover loser is out at that fixture, so ranks and seats agr
     // fixtures — each three ways.
     expect(brackets, "walked-over brackets checked").toBe((6 + 13) * 3);
     // Pairs, from the bracket shapes the generators build (B3 fix round 1, review m5). Each swept fixture puts out one
-    // entrant per forfeit and two on a double walkover: 1 + 1 + 2 = 4 per later fixture, the one walked-over fixture in
+    // entrant per withdrawal and two on a double walkover: 1 + 1 + 2 = 4 per later fixture, the one walked-over fixture in
     // its rows (a dead seat after it is a plain walkover). A fixture of round r is followed by every row of a higher round:
     //   knockout 8 + play-off — 8 rows: round 0 ×4, round 1 ×2, round 2 ×2 (final, play-off). A quarter-final has 4
     //   later rows, a semi-final 2: 4 × (4 × 4 + 2 × 2) = 80.
@@ -934,8 +944,10 @@ describe("X-FR-3 a walkover loser is out at that fixture, so ranks and seats agr
     //   final 7, reset 8. Later rows: 11 (WB r0), 9 (WB r1), 8 (WB r2), 6 (LB r3), 4 (LB r4), 3 (LB r5), 2 (LB r6):
     //   4 × (4 × 11 + 2 × 9 + 8 + 2 × 6 + 2 × 4 + 3 + 2) = 4 × 95 = 380.
     expect(pairs, "(out entrant, later fixture) pairs checked").toBe(80 + 380);
-    // Anti-vacuity: the double elimination's strict leg (a later LB round, the grand final) is reached.
-    expect(strictInDoubleElim.count, "strict comparisons in the double elimination").toBeGreaterThan(0);
+    // Anti-vacuity: the double elimination's strict leg (a later LB round, a WB fixture whose loser drops later, the
+    // grand final) and its level leg are both reached, each counted exactly. Measured, not derived: the count of the
+    // sweep's own comparisons over the generator's n = 8 rows (a change to the bracket's shape moves it on purpose).
+    expect(inDoubleElim, "comparisons in the double elimination").toEqual({ strict: 542, level: 76 });
   });
 
   it("X-FR-3 page playoff: a pp-q1 forfeit loser is out at round 0, never ranked by a pp-q2 row", () => {

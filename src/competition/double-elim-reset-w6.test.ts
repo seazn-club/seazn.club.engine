@@ -241,6 +241,20 @@ describe("double elimination: when the reset is owed (W6 X-DE-11)", () => {
     }
   });
 
+  it("X-DE-10 two malformed states: an owed reset settled with no result crowns nobody; broken wiring throws before an unsettled final", () => {
+    // Task 6 review m9, plan's call: undefined, not GF1's champion. RB6 §9: once the reset is owed the deciding match is the
+    // reset, and RB6-C6: an unplayed deciding match is never decided by anything else, so GF1's winner L is not champion.
+    // Before Task 6 this state answered L. Completion then refuses the settled stage as a wiring bug (no_title).
+    const noResult = rig({ gf: GF.lWon, reset: { status: "decided", home: "L", away: "W" } });
+    expect(resetOwed(noResult), "premise: owed").toBe(true);
+    expect(bracketTitle(noResult)).toBeUndefined();
+    expect(refusalOf(() => completeBracketStage(stage, noResult))).toEqual({ code: "CONFIG_INVALID", data: { reason: "no_title", stageId: "de" } });
+    // The wiring is read first, whatever the finals say: with GF1 still scheduled (a final unsettled) a GF1 with no feed is
+    // refused, where before Task 6 bracketTitle returned undefined for the unsettled final without reading it.
+    const brokenOpen = rig({ gf: { omit: ["homeFrom"] } });
+    expect(refusalOf(() => bracketTitle(brokenOpen))).toMatchObject({ code: "CONFIG_INVALID", data: { reason: "grand_final_feed_invalid", fixtureId: "gf" } });
+  });
+
   it("X-DE-11 a second call answers the same and changes nothing; correcting GF1 flips the answer each time", () => {
     const rows = rig({ gf: GF.lWon });
     const before = structuredClone(rows);

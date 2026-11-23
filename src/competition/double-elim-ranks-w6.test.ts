@@ -108,6 +108,16 @@ function placesByR3(rows: readonly BracketFixture[], n: number): Record<string, 
 
 describe("double elimination places by losers'-bracket exit round (W6 X-FR-6, X-FR-7)", () => {
   // single-sport: double-elimination structure and ranks are sport-agnostic (reads no SportModule)
+  it("X-FR-7 empty first: a stage with no fixtures ranks every entrant 1st, provisionally, and cannot complete", () => {
+    // No rulebook state: Generate never leaves a field of 2 or more without fixtures (RB6-E1, E2 refuse below 2), so there
+    // is no rulebook answer to pin. Today's behaviour, recorded (Task 6 review m5): with no fixture nobody has an exit
+    // round, so all n share the one group below an empty title, 1 + 0 entrants above = 1st. It is a provisional read and
+    // never a result: completion refuses it (no_final) before any rank is read.
+    const stage: BracketStage = { id: "de", kind: "double_elim", entrants: ids(8), seeds: seedsOf(ids(8)) };
+    expect(bracketRanks(stage, [])).toEqual(bySeed(1, 1, 1, 1, 1, 1, 1, 1));
+    expect(() => completeBracketStage(stage, [])).toThrow(expect.objectContaining({ code: "STAGE_NOT_READY", data: { stageId: "de", reason: "no_final" } }));
+  });
+
   it("X-FR-7 a field of 2: 1st and 2nd, nobody shares", () => {
     // RB6-E3, RB6-R2: no LB match; the deciding match's winner and loser. With the reset played (E2, the LB champion,
     // wins GF1 and the reset; RB6-R4) the reset decides.
@@ -300,6 +310,31 @@ describe("double elimination places after a forfeit, a withdrawal or a walkover 
     // (d) a finalist out at the deciding match is its loser: 2nd (RB6-C2).
     const d = gfWithdrawal();
     expect(bracketRanks(d.stage, d.rows)).toEqual(GF_WITHDRAWAL);
+  });
+
+  it("X-FR-8 a second size: odd fields, a winners'-bracket withdrawal, with byes changing which LB seats are live", () => {
+    // Task 6 review m6. The double walkovers above stay at n = 8: RB6-R10's worked examples are n = 8, and Task 7's
+    // guard sweep puts one on every real match at n = 8 and n = 16. Frame of 8, byes to the top seeds (RB4-D2, RB6-B1).
+    // n = 6: WB 1.1 and WB 1.4 are byes (E1, E2). E5 withdraws at WB 1.2 (wb-r0-i1, v E4) and vacates the LB 1.1 seat
+    // (RB6-X1), whose other seat is dead from the draw (WB 1.1's bye): nobody loses LB 1.1. RB6-R7: E5 ranks at LB round
+    // 1. LB 1.2 is E6 (WB 1.3's loser) by bye; LB 2.2 (W LB 1.2 v L WB 2.1, RB6-X2 c=0): E4 beats E6; LB 2.1 (W LB 1.1,
+    // nobody, v L WB 2.2): E3 walks over; LB 3.1: E3 beats E4; the LB final: E2 beats E3; GF1: E1. RB6-R3, R5: E6 alone
+    // in LB round 2 → 5th, E5 alone in LB round 1 → 6th.
+    const six = play(6, { withdraw: new Map([["wb-r0-i1", "E5"]]) });
+    expect(rowIn(six.rows, "wb-r0-i1"), "premise: E5 withdraws v E4 at WB 1.2").toMatchObject({ winner: "E4", loser: "E5", walkedOver: "loser" });
+    expect(bracketRanks(six.stage, six.rows)).toEqual(ranked(["E1", 1], ["E2", 2], ["E3", 3], ["E4", 4], ["E6", 5], ["E5", 6]));
+    // n = 5: byes to E1, E2, E3; E4 beats E5 at WB 1.2 (E5 to LB 1.1 by bye: WB 1.1's seat is dead); LB 1.2 is dead (WB
+    // 1.3 and 1.4 are byes) and hands LB 2.2 a dead seat (RB6-B3). E4 withdraws at WB 2.1 (wb-r1-i0, v E1) and vacates
+    // LB 2.2 (RB6-X2 c=0, G=2: p = 3 − 1 = 2): nobody loses it. LB 2.1: E3 (L WB 2.2) beats E5; LB 3.1: E3 walks over the
+    // empty LB 2.2 side, nobody loses it; the LB final: E2 beats E3. RB6-R3, R10: E4 and E5 both out in LB round 2 → 4=,
+    // nobody 5th.
+    const five = play(5, { withdraw: new Map([["wb-r1-i0", "E4"]]) });
+    expect(rowIn(five.rows, "wb-r1-i0"), "premise: E4 withdraws v E1 at WB 2.1").toMatchObject({ winner: "E1", loser: "E4", walkedOver: "loser" });
+    expect(rowIn(five.rows, "lb-r2-i0").loser, "premise: LB 3.1 is a walkover nobody loses").toBeUndefined();
+    expect(bracketRanks(five.stage, five.rows)).toEqual(bySeed(1, 2, 3, 4, 4));
+    // Both complete with the same places.
+    expect(completeBracketStage(six.stage, six.rows).finalRanks).toEqual(bracketRanks(six.stage, six.rows));
+    expect(completeBracketStage(five.stage, five.rows).finalRanks).toEqual(bySeed(1, 2, 3, 4, 4));
   });
 
   it("X-FR-7 the app's per-lane rounds rank the same as the generator's", () => {
