@@ -46,6 +46,8 @@ import {
   pairKey,
   pairRound,
   type Colour,
+  type SwissRoundBoard,
+  type SwissRoundFacts,
   type SwissStanding,
 } from "../scheduling/swiss.ts";
 import { resolvePositions } from "../sport/catalog.ts";
@@ -643,7 +645,9 @@ function playSwissStage(
   const played = new Set<string>();
   const colours = new Map<EntrantId, Colour[]>();
   const byes = new Set<EntrantId>();
-  const floats = new Map<EntrantId, number>();
+  // X-SW-32: each earlier round's facts, oldest first, from which the pairer derives the floats itself (FIDE C.04.3 Art. 1.4).
+  // A simulated board is always played, so no fact carries a forfeit.
+  const rounds: SwissRoundFacts[] = [];
   const points = new Map<EntrantId, number>(entrants.map((id) => [id, 0]));
 
   let roundsPlayed = 0;
@@ -653,10 +657,16 @@ function playSwissStage(
       score: points.get(id) ?? 0,
       rank: seeds.get(id) ?? Number.MAX_SAFE_INTEGER,
     }));
-    const paired = pairRound(standings, { played, colours, byes, floats }, { chess });
+    const paired = pairRound(standings, { played, colours, byes, rounds }, { chess });
     if (!paired.ok) break; // SWISS_NO_LEGAL_PAIRING: the round is refused and seats nothing
     if (paired.bye !== undefined) byes.add(paired.bye);
-    for (const id of paired.floated) floats.set(id, (floats.get(id) ?? 0) + 1);
+    const facts: SwissRoundBoard[] = paired.pairings.map((p) => ({
+      home: p.home,
+      away: p.away,
+      homeScore: points.get(p.home) ?? 0,
+      awayScore: points.get(p.away) ?? 0,
+    }));
+    rounds.push({ boards: facts, ...(paired.bye === undefined ? {} : { bye: paired.bye }) });
 
     for (let board = 0; board < paired.pairings.length; board++) {
       const pairing = paired.pairings[board] as { home: EntrantId; away: EntrantId };

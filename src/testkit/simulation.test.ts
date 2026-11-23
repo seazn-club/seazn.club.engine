@@ -9,6 +9,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { pairKey, pairRound, type Colour, type SwissRoundFacts, type SwissStanding } from "../scheduling/swiss.ts";
 import { builtinModules } from "../sports/index.ts";
 import type { AnySportModule } from "../sport/module.ts";
 import {
@@ -279,4 +280,63 @@ describe("W2d T11 — the table-measure check reads each sport's primary (every 
     }
     expect(swissRuns, "sports whose Swiss default ranks on Buchholz").toBeGreaterThan(0);
   }, 120_000);
+});
+
+// X-SW-32: the simulation is the engine's own producer of a Swiss history. It must hand the pairer the earlier rounds' facts
+// (`rounds`), not the deprecated float count: replaying each simulated Swiss stage from its own record, every round must be the
+// one the facts pair, and some rounds must be ones the count would have paired differently, or the check could not tell.
+describe("X-SW-32 the simulation pairs each Swiss round from the earlier rounds' facts (every sport, counted)", () => {
+  it("X-SW-32 every simulated Swiss round replays from its record with `rounds`, and the float count would have changed some", () => {
+    let rounds = 0;
+    let differ = 0;
+    for (const module of builtinModules) {
+      const chess = module.key === "boardgame"; // the sim's own reading: only chess seats colours
+      for (const seed of [1, 2, 3, 5, 6, 7]) { // no multiple of 4: those inject a void, which rewrites a result after later rounds were paired
+        for (const entrantCount of [10, 13]) {
+          const sim = simulateDivision({ ...simOptionsFor(module, "swiss_knockout", seed), entrantCount });
+          const stage = sim.stages[0];
+          if (stage?.kind !== "swiss") throw new Error(`${module.key}: premise — the first stage is the Swiss stage`);
+          const rank = new Map(stage.entrants.map((id, i) => [id, i + 1]));
+          const points = new Map(stage.entrants.map((id) => [id, 0]));
+          const played = new Set<string>();
+          const colours = new Map<string, Colour[]>();
+          const byes = new Set<string>();
+          const facts: SwissRoundFacts[] = [];
+          const floats = new Map<string, number>(); // the deprecated producer's count, for the differential
+          const roundNos = [...new Set(stage.fixtures.map((f) => f.roundNo as number))].sort((a, b) => a - b);
+          for (const roundNo of roundNos) {
+            const boards = stage.fixtures.filter((f) => f.roundNo === roundNo);
+            const standings: SwissStanding[] = stage.entrants.map((id) => ({ entrantId: id, score: points.get(id) ?? 0, rank: rank.get(id) ?? 0 }));
+            const seated = new Set(boards.flatMap((f) => [f.home as string, f.away as string]));
+            const bye = stage.entrants.find((id) => !seated.has(id));
+            const expected = { pairings: boards.map((f) => ({ home: f.home, away: f.away })), ...(bye === undefined ? {} : { bye }) };
+            const replay = pairRound(standings, { played, colours, byes, rounds: facts }, { chess });
+            expect(replay.ok && { pairings: replay.pairings, ...(replay.bye === undefined ? {} : { bye: replay.bye }) }, `${module.key} seed ${seed} n ${entrantCount} round ${roundNo}`).toEqual(expected);
+            const byCount = pairRound(standings, { played, colours, byes, floats }, { chess });
+            if (JSON.stringify(byCount) !== JSON.stringify(replay)) differ++;
+            rounds++;
+            if (replay.ok) for (const id of replay.floated) floats.set(id, (floats.get(id) ?? 0) + 1);
+            facts.push({
+              boards: boards.map((f) => ({ home: f.home as string, away: f.away as string, homeScore: points.get(f.home as string) ?? 0, awayScore: points.get(f.away as string) ?? 0 })),
+              ...(bye === undefined ? {} : { bye }),
+            });
+            if (bye !== undefined) byes.add(bye);
+            for (const f of boards) {
+              const home = f.home as string;
+              const away = f.away as string;
+              played.add(pairKey(home, away));
+              if (chess) {
+                colours.set(home, [...(colours.get(home) ?? []), "W"]);
+                colours.set(away, [...(colours.get(away) ?? []), "B"]);
+              }
+              points.set(home, (points.get(home) ?? 0) + (f.result?.[0].points ?? 0));
+              points.set(away, (points.get(away) ?? 0) + (f.result?.[1].points ?? 0));
+            }
+          }
+        }
+      }
+    }
+    expect(rounds, "Swiss rounds replayed").toBeGreaterThan(0);
+    expect(differ, "rounds the deprecated float count would have paired differently").toBeGreaterThan(0);
+  }, 300_000);
 });
