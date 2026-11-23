@@ -125,6 +125,8 @@ describe("double elimination: the completed-places guard passes the places a dou
       code: "CONFIG_INVALID",
       data: { reason: "title_shape", stageId: "de", title: "none", rankOne: ids(8) },
     });
+    // No title and nobody at 1 is still no title: refused title_shape, not read as a ranking with 1st left empty.
+    expect(refusalOf(() => assertCompletedBracketPlaces(bare, [], bySeed(2, 2, 2, 2, 2, 2, 2, 2))).data).toMatchObject({ reason: "title_shape", title: "none", rankOne: [] });
   });
 
   it("X-FR-9 n = 4, a double walkover in LB 1.1: two at 3=, nobody 4th, and the stage completes", () => {
@@ -226,12 +228,13 @@ describe("double elimination: the completed-places guard passes the places a dou
         ["coins 1", () => coins(100 + n)],
         ["coins 2", () => coins(200 + n)],
       ];
-      for (const [name, winner] of scripts) {
+      for (const [, winner] of scripts) {
         for (const reset of [false, true]) {
           for (const feeds of [true, false]) {
             const played = play(n, { reset, feeds, winner: winner() });
+            // The guard accepts the engine's own output (completion runs it; `completed` runs it once more). The places'
+            // independence from the engine is double-elim-ranks-w6's `placesByR3` sweep, not this one.
             const places = completed(played);
-            expect(places, `n=${n} ${name} reset ${reset} feeds ${feeds}`).toEqual(bracketRanks(played.stage, played.rows));
             entrantsRanked += places.length;
             runs++;
           }

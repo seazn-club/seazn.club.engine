@@ -734,7 +734,8 @@ export function bracketTitle(fixtures: readonly BracketFixture[]): BracketTitle 
 // Completing a bracket stage is refused, never ranked provisionally, until `isBracketStageComplete` holds (X-CH-7, ruling
 // 274, RB4-C7): STAGE_NOT_READY with `reason: "no_final"` when no fixture is the final, else `reason:
 // "fixtures_undecided"` naming every fixture still owed, else `reason: "reset_owed"` naming an earned reset that is void
-// and its grand final (X-DE-12). Its ranks then pass the strict check (X-FR-1, B3-1).
+// and its grand final (X-DE-12). Its ranks then pass the strict check (X-FR-1, B3-1); a double elimination's, the title
+// and exit-round check (X-FR-9).
 export function completeBracketStage(
   stage: BracketStage,
   fixtures: readonly BracketFixture[],

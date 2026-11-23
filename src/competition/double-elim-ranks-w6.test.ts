@@ -372,31 +372,8 @@ describe("double elimination places after a forfeit, a withdrawal or a walkover 
     expect(checked, "4 cases × 2 numberings").toBe(8);
   });
 
-  it("X-FR-7 a double walkover: everyone out in that round shares its place by the same formula", () => {
-    // RB6-F5, F7, R10 (ruling 306(c)), n = 8 to seed otherwise. Each place is 1 + the entrants placed above.
-    const cases: [string, Played, FinalPlace[]][] = [
-      // LB final (lb-r3-i0, E3 v E2) both walked over: nobody is LB champion, E1 walks over GF1; E2 and E3 went out last
-      // → 2=, nobody 3rd; E4 (LB 3.1) 4th.
-      ["the LB final", play(8, { doubleWalkover: new Set(["lb-r3-i0"]) }),
-        ranked(["E1", 1], ["E2", 2], ["E3", 2], ["E4", 4], ["E5", 5], ["E6", 5], ["E7", 7], ["E8", 7])],
-      ["the LB final, reset on", play(8, { reset: true, doubleWalkover: new Set(["lb-r3-i0"]) }),
-        ranked(["E1", 1], ["E2", 2], ["E3", 2], ["E4", 4], ["E5", 5], ["E6", 5], ["E7", 7], ["E8", 7])],
-      // LB 2.1 (lb-r1-i0, E5 v E3) both walked over: out in LB round 2 with E6 (lost LB 2.2); LB 3.1 is a walkover
-      // nobody loses → three at 4=, nobody 5th or 6th; E4 loses the LB final → 3rd.
-      ["LB 2.1", play(8, { doubleWalkover: new Set(["lb-r1-i0"]) }),
-        ranked(["E1", 1], ["E2", 2], ["E4", 3], ["E3", 4], ["E5", 4], ["E6", 4], ["E7", 7], ["E8", 7])],
-      // WB 2.1 (wb-r1-i0, E1 v E4) both walked over: both vacate LB 2.2's seat (RB6-X2 c=0), out in LB round 2 with E5
-      // (lost LB 2.1); the WB final and the LB final are walkovers nobody loses; E6 (lost LB 3.1) 3rd; the three 4=.
-      ["WB 2.1", play(8, { doubleWalkover: new Set(["wb-r1-i0"]) }),
-        ranked(["E2", 1], ["E3", 2], ["E6", 3], ["E1", 4], ["E4", 4], ["E5", 4], ["E7", 7], ["E8", 7])],
-    ];
-    let checked = 0;
-    for (const [what, { stage, rows }, want] of cases) {
-      expect(bracketRanks(stage, rows), what).toEqual(want);
-      checked++;
-    }
-    expect(checked).toBe(4);
-  });
+  // The double walkovers of RB6-F5, F7 and R10 (the LB final, reset off and on; LB 2.1; WB 2.1) have one home: the places
+  // guard file (double-elim-places-guard-w6.test.ts), which completes each stage, so ranks and guard are both proved there.
 
   it("X-FR-8 an entrant in no fixture, or whose line was voided, shares the last place", () => {
     // Plan's call: neither lost a match nor was walked over, so neither has an exit round — below every LB round, shared.
@@ -404,7 +381,11 @@ describe("double elimination places after a forfeit, a withdrawal or a walkover 
     // (5th alone), LB 3.1 E6 (4th), the LB final E4 (3rd); GF1 E2 over E3. E9 is declared and in no fixture.
     // differential: today E1 7th, E8 8th, E9 9th, by seed.
     const { stage, rows } = play(8, { voided: new Set(["wb-r0-i0"]), extra: ["E9"] });
-    expect(bracketRanks(stage, rows)).toEqual(ranked(["E2", 1], ["E3", 2], ["E4", 3], ["E6", 4], ["E5", 5], ["E7", 6], ["E1", 7], ["E8", 7], ["E9", 7]));
+    const want = ranked(["E2", 1], ["E3", 2], ["E4", 3], ["E6", 4], ["E5", 5], ["E7", 6], ["E1", 7], ["E8", 7], ["E9", 7]);
+    expect(bracketRanks(stage, rows)).toEqual(want);
+    // A real app path (a voided line; a declared entrant in no fixture, such as a departed qualifier): the stage completes
+    // with the same places, and the completed-places guard accepts three entrants with no exit round sharing last.
+    expect(completeBracketStage(stage, rows).finalRanks).toEqual(want);
   });
 });
 

@@ -42,8 +42,8 @@ export interface PlayOutOptions {
 
 /** The rows carry neither the generator's feeds (`homeFrom` / `awayFrom`) nor `conditional`. A double elimination ranks a
  *  winners'-bracket exit by the losers'-bracket fixture its loser feed names (W6, RB6-R7), so a caller that ranks one
- *  with a winners'-bracket withdrawal or double walkover attaches the feeds first; without them that entrant shares the
- *  last place (the fallback). */
+ *  with a winners'-bracket withdrawal or double walkover attaches the feeds first; without them `bracketRanks` ranks that
+ *  entrant last (the fallback) and completion refuses the stage (`exit_round_unreadable`, W6 X-FR-9). */
 export function playOutBracket(gen: GeneratedBracket, opts: PlayOutOptions = {}): BracketFixture[] {
   const seedOf = (id: EntrantId): number => opts.seeds?.get(id) ?? Number.MAX_SAFE_INTEGER;
   const winnerOf = opts.winner ?? ((home: EntrantId, away: EntrantId): EntrantId => (seedOf(away) < seedOf(home) ? away : home));
