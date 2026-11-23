@@ -69,6 +69,38 @@ export const AWAITING_PROOF: ReadonlyMap<string, string> = new Map<string, strin
   // 276-291, recorded ahead of the code on ruling 285's "approve and record all rules", 274's pattern): the value names the W5 PR whose test proves
   // the row: the engine PR, app PR A or app PR B. The proving commit deletes the entry, fills `proved by` and drops the row's
   // "not yet implemented" citation note. The W5 close-out deleted the last three (app PR B's X-QS-2, X-ADJ-4, X-ADJ-5): no W5 entry remains.
+  // W6's rows (design 2026-11-23-format-matrix-w6-double-elim-design.md §12, rulebook-W6-double-elim.md; signed by seazn.club `_INDEX` rulings
+  // 293-306, recorded ahead of the code on ruling 306(a), which signed every REC row of the rulebook "build as written"): the value names the W6
+  // PR whose test proves the row: the engine PR, or app PR B. A row whose proving test app PR A writes waits on app PR B too, because that test
+  // gains the row's id in its title only at PR B's engine bump (design §12 step 1). The proving commit deletes the entry, fills `proved by` and
+  // drops the row's "not yet implemented" citation note; the W6 close-out (a docs-only engine PR after app PR B) deletes the app PR B entries.
+  // One entry per line, so a line count is the entry count.
+  ["X-DE-2", "W6 engine PR"],
+  ["X-DE-3", "W6 engine PR"],
+  ["X-DE-4", "W6 engine PR"],
+  ["X-DE-5", "W6 engine PR"],
+  ["X-DE-6", "W6 engine PR"],
+  ["X-DE-16", "W6 engine PR"],
+  ["X-DE-10", "W6 engine PR"],
+  ["X-DE-11", "W6 engine PR"],
+  ["X-DE-12", "W6 engine PR"],
+  ["X-CH-9", "W6 engine PR"],
+  ["X-FR-6", "W6 engine PR"],
+  ["X-FR-7", "W6 engine PR"],
+  ["X-FR-8", "W6 engine PR"],
+  ["X-FR-9", "W6 engine PR"],
+  ["X-DE-7", "W6 app PR B"],
+  ["X-DE-8", "W6 app PR B"],
+  ["X-DE-9", "W6 app PR B"],
+  ["X-DE-13", "W6 app PR B"],
+  ["X-DE-14", "W6 app PR B"],
+  ["X-DE-15", "W6 app PR B"],
+  ["X-CH-10", "W6 app PR B"],
+  ["X-LE-15", "W6 app PR B"],
+  ["X-LE-16", "W6 app PR B"],
+  ["X-LE-17", "W6 app PR B"],
+  ["X-RB-2", "W6 app PR B"],
+  ["X-TP-8", "W6 app PR B"],
 ]);
 
 /** Rule rows write every engine path as `packages/engine/...`, in the monorepo and in the engine's own repo alike: the prefix is
