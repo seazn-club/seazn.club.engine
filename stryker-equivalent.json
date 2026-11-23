@@ -194,7 +194,7 @@
       "reason": "The same line guards this comparison with `taken.home !== taken.away`, so it only ever compares two different counts, where `<` and `<=` agree (W2e Task 9 moved it here from line 84, where line 83 returned on equal counts)."
     },
     {
-      "mutant": "src/competition/stage.ts:1084:33 EqualityOperator → fixture.round <= prev",
+      "mutant": "src/competition/stage.ts:1174:33 EqualityOperator → fixture.round <= prev",
       "original": "fixture.round < prev",
       "line": "if (prev === undefined || fixture.round < prev) outAt.set(id, fixture.round);",
       "reason": "At fixture.round === prev the mutant sets outAt[id] to the value it already holds (prev), so the elimination round each entrant is pinned at is the same map either way; only the strict `>=` mutant changes it (killed)."
@@ -791,7 +791,7 @@
       "mutant": "src/competition/points.ts:736:7 ConditionalExpression → false",
       "original": "locks.length === 0",
       "line": "if (locks.length === 0) return [...ranked];",
-      "reason": "With no locks the mutant re-stamps every row `{...row, rank}` from a free list of 1..n in table order, and every ranked row already carries exactly that rank (rankStandings writes `row.rank = index + 1`, tiebreakers.ts), so the rows are equal (competition/points-md1.test.ts, 'the empty case', passes under it); the one production caller, stage.ts:622, calls only with `poolLocks.length > 0`."
+      "reason": "With no locks the mutant re-stamps every row `{...row, rank}` from a free list of 1..n in table order, and every ranked row already carries exactly that rank (rankStandings writes `row.rank = index + 1`, tiebreakers.ts), so the rows are equal (competition/points-md1.test.ts, 'the empty case', passes under it); the one production caller, stage.ts:625, calls only with `poolLocks.length > 0`."
     },
     {
       "mutant": "src/competition/points.ts:745:9 LogicalOperator → rank < 1 && rank > n",
@@ -938,19 +938,19 @@
       "reason": "`< 1` and `<= 1` agree on every length but 1. On a class of one the mutant sends it to groupBySort, which returns [[row]] without a comparator call, `groups.length > 1` is false, and the same class comes back unmarked: the `→ false` row's case."
     },
     {
-      "mutant": "src/competition/stage.ts:607:11 ConditionalExpression → false",
+      "mutant": "src/competition/stage.ts:610:11 ConditionalExpression → false",
       "original": "poolDraws === undefined",
       "line": "...(poolDraws === undefined ? {} : { lotsDraws: poolDraws }),",
       "reason": "With the test false the spread always passes `lotsDraws: poolDraws`, and poolDraws is undefined exactly when the original passes no `lotsDraws` key. rankStandings reads the context's lotsDraws in one place, `ctx.lotsDraws?.get(membersKey)` in its lots step, which answers undefined for an absent key and an undefined value alike (`run` spreads the context, but nothing reads `run.lotsDraws`); zero rows and an empty table never reach that lookup in either version. Every ranking, event and new draw is the same."
     },
     {
-      "mutant": "src/competition/stage.ts:605:11 ConditionalExpression → false",
+      "mutant": "src/competition/stage.ts:608:11 ConditionalExpression → false",
       "original": "stage.winsCount === undefined",
       "line": "...(stage.winsCount === undefined ? {} : { winsCount: stage.winsCount }),",
       "reason": "With the test false the spread always passes `winsCount: stage.winsCount`, which is undefined exactly when the original passes no `winsCount` key. rankStandings reads it in one place, `ctx.winsCount === \"regulation\"` in the `wins` comparator (tiebreakers.ts winsOf), which answers false for an absent key and an undefined value alike; nothing tests `\"winsCount\" in`. Every ranking is the same. W2d T8."
     },
     {
-      "mutant": "src/competition/stage.ts:606:11 ConditionalExpression → false",
+      "mutant": "src/competition/stage.ts:609:11 ConditionalExpression → false",
       "original": "stage.gamePoints === undefined",
       "line": "...(stage.gamePoints === undefined ? {} : { gamePoints: stage.gamePoints }),",
       "reason": "With the test false the spread always passes `gamePoints: stage.gamePoints`, which is undefined exactly when the original passes no `gamePoints` key. rankStandings reads it in one place, `ctx.gamePoints === undefined ? <table points> : ctx.gamePoints(result)` (tiebreakers.ts gamePointsOf), which takes the table-points branch for an absent key and an undefined value alike. Every ranking is the same. W2d T8."
@@ -1010,7 +1010,7 @@
       "reason": "crossGroupRulesOf with no winsCount: the mutant writes `winsCount: undefined`; resolveProgression forwards it only when `rules?.winsCount !== undefined`, so absent and undefined pass nothing alike (W2d T12)."
     },
     {
-      "mutant": "src/competition/stage.ts:617:11 ConditionalExpression → false",
+      "mutant": "src/competition/stage.ts:620:11 ConditionalExpression → false",
       "original": "stage.partialScheduleOrder === undefined",
       "line": "...(stage.partialScheduleOrder === undefined ? {} : { partialScheduleOrder: stage.partialScheduleOrder }),",
       "reason": "A stage with no partial-schedule order: the mutant passes `partialScheduleOrder: undefined` to rankStandings, which parses it only when `ctx.partialScheduleOrder !== undefined` — the same as an absent key (W2d T12; Timeout under load, equivalent by reading)."
