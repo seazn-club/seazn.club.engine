@@ -7,7 +7,12 @@
 // Implementation, a simplified Dutch: order by score group then pairing rank and
 // pair each score group by fold (or rank-adjacent), floating the fewest down to
 // the next group, the lowest-ranked among the least-floated (P-Q1; FIDE C.04.3
-// ranks avoiding a repeat float above rank). An odd field's bye goes to the
+// ranks avoiding a repeat float above rank). With `history.rounds` (X-SW-32) the
+// floats are derived per round from the earlier rounds' facts (FIDE C.04.3
+// Art. 1.4.2-1.4.4) and each score group weighs [C7] then [C14]-[C21] over the
+// last two rounds, taking a candidate with nothing to minimise at once (Art.
+// 3.4.1) and otherwise the best, the earlier on a tie (Art. 3.8.1); the
+// deprecated `history.floats` count is then ignored. An odd field's bye goes to the
 // lowest eligible entrant whose removal leaves a pairable remainder, trying the
 // candidates from the bottom up (P-Q2). When the score groups cannot pair a
 // remainder within their share of the search budget, a COMPLETE backtracking
@@ -58,7 +63,36 @@ export interface SwissHistory {
   played: ReadonlySet<string>; // pairKey(a,b) of every fixture already contested — no rematch (hard)
   colours?: ReadonlyMap<EntrantId, readonly Colour[]>; // colour sequence per entrant; outside chess its home/away record (home = "W"), read softly (X-SW-4)
   byes?: ReadonlySet<EntrantId>; // entrants NOT eligible for the bye: already had one, or (FIDE C.04.1(d)) won a walkover. Read only by the bye pick.
-  floats?: ReadonlyMap<EntrantId, number>; // downfloat count (avoid repeat floats — soft)
+  /** @deprecated Pass `rounds` instead. A running downfloat count per entrant: the least-floated float first (soft). Read only
+   *  when `rounds` is absent; with `rounds` it is ignored. */
+  floats?: ReadonlyMap<EntrantId, number>;
+  /** X-SW-32: the facts of every earlier round of this stage, oldest first, the round just played last. When present, the
+   *  pairer derives who floated which way in each round itself (`swissRoundFloats`, FIDE C.04.3 Art. 1.4.2–1.4.4) and, in each
+   *  score group, weighs [C7] and then the float criteria [C14]–[C21], reading the previous round and the one before it.
+   *  `floats` is then ignored. Only the last two rounds are read, but every round given is checked. */
+  rounds?: readonly SwissRoundFacts[];
+}
+
+/** Which way an entrant floated in one round (FIDE C.04.3 Art. 1.4.2–1.4.3). */
+export type SwissFloat = "down" | "up";
+
+/** One board of an earlier round, as the float criteria read it (X-SW-32). */
+export interface SwissRoundBoard {
+  home: EntrantId;
+  away: EntrantId;
+  /** Each side's pairing score BEFORE that round: the score the round was paired on (C.04.3 Art. 1.2, 1.4.2). */
+  homeScore: number;
+  awayScore: number;
+  /** Absent: the board was played. Present: it was not (a forfeit recorded before play), so the two have not "played each
+   *  other" (Art. 1.4.2); it names the side that scored more than a loss without playing, which downfloats (Art. 1.4.3):
+   *  "home", "away", or "none" (a double forfeit: nobody floats, Art. 1.4.4). */
+  forfeit?: "home" | "away" | "none";
+}
+
+/** What one earlier round seated, for the float criteria (X-SW-32). */
+export interface SwissRoundFacts {
+  boards: readonly SwissRoundBoard[];
+  bye?: EntrantId; // the pairing-allocated bye (Art. 1.5), when the round had one: a downfloat (Art. 1.4.3)
 }
 
 export interface SwissConstraints {
@@ -118,7 +152,7 @@ export interface SwissRound {
   readonly ok: true;
   pairings: SwissPairing[]; // always ⌊n/2⌋ ≥ 1 boards
   bye?: EntrantId; // present iff n is odd: the entrant sitting out
-  floated: EntrantId[]; // entrants that downfloated this round (merge into history.floats)
+  floated: EntrantId[]; // the stronger side of each board between different scores (the deprecated history.floats count). With `rounds`, record the round's boards instead.
   // Present iff constraints.lookAhead: can the next round (this field, with this round's boards, bye and colours added) be
   // paired? "unpairable" seats this round anyway (a soft preference, never a refusal); the app warns the organiser.
   nextRound?: SwissNextRound;
@@ -142,6 +176,85 @@ const EXTRA_FLOATS = 4;
 // Stable, order-independent key for an unordered pair.
 export function pairKey(a: EntrantId, b: EntrantId): string {
   return a < b ? `${a}|${b}` : `${b}|${a}`;
+}
+
+/**
+ * Who floated which way in one round (X-SW-32; FIDE C.04.3 (1 Feb 2026) Art. 1.4.2–1.4.4): on a PLAYED board between different
+ * scores, the higher side downfloats and the lower upfloats (1.4.2, the scores the round was paired on, so score decides the
+ * rank); a pairing-allocated bye and a forfeit win downfloat (1.4.3); nobody else floats (1.4.4: an equal-score board, a
+ * forfeit loss, a double forfeit). An entrant seated twice in the round, a score that is not a finite number and a forfeit
+ * marker other than "home", "away" or "none" are caller defects: CONFIG_INVALID.
+ */
+export function swissRoundFloats(round: SwissRoundFacts): Map<EntrantId, SwissFloat> {
+  const floats = new Map<EntrantId, SwissFloat>();
+  const seated = new Set<EntrantId>();
+  const seat = (id: EntrantId): void => {
+    if (seated.has(id)) {
+      throw new EngineError("CONFIG_INVALID", `pairRound: "${id}" is seated twice in one round's facts`, { entrantId: id });
+    }
+    seated.add(id);
+  };
+  for (const board of round.boards) {
+    seat(board.home);
+    seat(board.away);
+    for (const score of [board.homeScore, board.awayScore]) {
+      if (!Number.isFinite(score)) {
+        throw new EngineError("CONFIG_INVALID", `pairRound: a round's facts give ${board.home} v ${board.away} the score ${score}`, {
+          home: board.home,
+          away: board.away,
+        });
+      }
+    }
+    const forfeit: unknown = board.forfeit;
+    if (forfeit === undefined) {
+      if (board.homeScore !== board.awayScore) {
+        const homeHigher = board.homeScore > board.awayScore;
+        floats.set(board.home, homeHigher ? "down" : "up");
+        floats.set(board.away, homeHigher ? "up" : "down");
+      }
+    } else if (forfeit === "home" || forfeit === "away") {
+      floats.set(forfeit === "home" ? board.home : board.away, "down");
+    } else if (forfeit !== "none") {
+      throw new EngineError("CONFIG_INVALID", `pairRound: a round's facts mark ${board.home} v ${board.away} forfeit ${JSON.stringify(forfeit)}`, {
+        home: board.home,
+        away: board.away,
+      });
+    }
+  }
+  if (round.bye !== undefined) {
+    seat(round.bye);
+    floats.set(round.bye, "down");
+  }
+  return floats;
+}
+
+// X-SW-32: how one candidate of a score group (its downfloaters, and the boards of the entrants it carried in) stands on [C7]
+// and the float criteria [C14]–[C21], in FIDE's order. Counts and score-difference lists, each list highest first.
+interface FloatCost {
+  c7: number[]; // [C7] the downfloaters' scores
+  counts: [number, number, number, number]; // [C14] [C15] [C16] [C17]
+  differences: [number[], number[], number[], number[]]; // [C18] [C19] [C20] [C21]
+}
+
+// Lower is better: score lists compare element by element, highest first, a shorter one lower on a shared prefix (one score
+// difference fewer); the criteria compare in the order FIDE ranks them. 0 is a tie (Art. 3.8.1: then the earlier candidate).
+function compareLists(a: readonly number[], b: readonly number[]): number {
+  for (let i = 0; i < Math.min(a.length, b.length); i++) {
+    if (a[i] !== b[i]) return (a[i] as number) - (b[i] as number);
+  }
+  return a.length - b.length;
+}
+function compareFloatCost(a: FloatCost, b: FloatCost): number {
+  const c7 = compareLists(a.c7, b.c7);
+  if (c7 !== 0) return c7;
+  for (let i = 0; i < 4; i++) {
+    if (a.counts[i] !== b.counts[i]) return (a.counts[i] as number) - (b.counts[i] as number);
+  }
+  for (let i = 0; i < 4; i++) {
+    const d = compareLists(a.differences[i] as number[], b.differences[i] as number[]);
+    if (d !== 0) return d;
+  }
+  return 0;
 }
 
 const opposite = (c: Colour): Colour => (c === "W" ? "B" : "W");
@@ -298,6 +411,14 @@ export function pairRound(
       });
     }
     seen.add(s.entrantId);
+  }
+  // X-SW-32: with the earlier rounds' facts, who floated which way the previous round and two rounds before ([C14]–[C21] read
+  // no further back). Every round is read, so a defect in any of them is refused, not only one inside the window.
+  let floatWindow: { previous: Map<EntrantId, SwissFloat>; twoBefore: Map<EntrantId, SwissFloat> } | undefined;
+  if (history.rounds !== undefined) {
+    const perRound = history.rounds.map(swissRoundFloats);
+    const none = new Map<EntrantId, SwissFloat>();
+    floatWindow = { previous: perRound[perRound.length - 1] ?? none, twoBefore: perRound[perRound.length - 2] ?? none };
   }
   const refuse = (reason: SwissRefusalReason): SwissRefusal => ({
     ok: false,
@@ -467,7 +588,128 @@ export function pairRound(
   // float tracking; FIDE C.04.3 ranks avoiding a repeat float above rank). Bounded: at most parity + 4 floaters per group; who floats
   // ranges over the whole group, each choice read costs a node, and the pass as a
   // whole may spend only GROUP_PASS_SHARE of the budget left when it starts.
-  const floatCountOf = (id: EntrantId): number => history.floats?.get(id) ?? 0;
+  // With the round facts (X-SW-32) the count is not read: the floaters go bottom first, and the float criteria order the candidates.
+  const floatCountOf = (id: EntrantId): number => (floatWindow !== undefined ? 0 : (history.floats?.get(id) ?? 0));
+
+  // X-SW-32: one score group's candidates with `fc` downfloaters, weighed by FIDE C.04.3's float criteria. A candidate is a set
+  // of floaters and the boards of the entrants the group carried in (its MDPs; the residents left all hold the group's score,
+  // so their boards float nobody): those two decide [C7] and [C14]–[C21] (`costOf`). They are generated in the order the
+  // search below has always reached them (floaters bottom first, each carried entrant's partner by fold), the residents'
+  // boards found for each by the same complete search. One that matches the best a candidate could possibly do is tried at
+  // once (Art. 3.4.1); the rest are kept, and when none of those completes they are tried best first, the earlier on a tie
+  // (Art. 3.8.1). Trying one runs the groups below (C.04.3 [C4]: the round must still complete): when they cannot complete
+  // with those floaters, no other candidate with the same floaters is tried. "out": the node budget ran out.
+  const pairGroupByFloats = (
+    current: readonly SwissStanding[],
+    carry: readonly SwissStanding[],
+    fc: number,
+    fw: NonNullable<typeof floatWindow>,
+    below: (floaters: SwissStanding[], boards: Boards) => Found,
+  ): Found | "out" => {
+    const carried = new Set(carry.map((s) => s.entrantId));
+    // [C14]/[C16] count the RESIDENT floaters (an MDP floating on is not one); [C15]/[C17] the MDP opponents, the lower side of
+    // a carried entrant's board; [C18]/[C20] the MDPs paired here, the higher side. The 2026 text gives a score difference only
+    // to a board, so an MDP left unpaired adds none. The engine may seat two MDPs together, which FIDE never does: there the
+    // lower one takes the upfloat (Art. 1.4.2) and is read as the MDP opponent.
+    const costOf = (floaters: readonly SwissStanding[], boards: Boards): FloatCost => {
+      const cost: FloatCost = { c7: floaters.map((f) => f.score).sort((x, y) => y - x), counts: [0, 0, 0, 0], differences: [[], [], [], []] };
+      for (const f of floaters) {
+        if (carried.has(f.entrantId)) continue;
+        if (fw.previous.get(f.entrantId) === "down") cost.counts[0]++;
+        if (fw.twoBefore.get(f.entrantId) === "down") cost.counts[2]++;
+      }
+      for (const [x, y] of boards) {
+        if (x.score === y.score) continue;
+        const [hi, lo] = x.score > y.score ? [x, y] : [y, x];
+        const difference = hi.score - lo.score;
+        if (fw.previous.get(lo.entrantId) === "up") {
+          cost.counts[1]++;
+          cost.differences[1].push(difference);
+        }
+        if (fw.twoBefore.get(lo.entrantId) === "up") {
+          cost.counts[3]++;
+          cost.differences[3].push(difference);
+        }
+        if (fw.previous.get(hi.entrantId) === "down") cost.differences[0].push(difference);
+        if (fw.twoBefore.get(hi.entrantId) === "down") cost.differences[2].push(difference);
+      }
+      for (const list of cost.differences) list.sort((x, y) => y - x);
+      return cost;
+    };
+    // The best any candidate could do: the fc lowest scores floating, and nothing else counted.
+    const best: FloatCost = {
+      c7: current.map((s) => s.score).sort((x, y) => x - y).slice(0, fc).sort((x, y) => y - x),
+      counts: [0, 0, 0, 0],
+      differences: [[], [], [], []],
+    };
+    // Every way to seat the carried entrants of `rest` (a prefix of it, in carry order), as the complete search reaches them:
+    // the first unpaired carried entrant takes each legal partner in fold order. The residents left come back unpaired.
+    function* carriedBoards(rest: readonly SwissStanding[]): Generator<{ boards: Boards; residents: SwissStanding[] }> {
+      const chosen: Boards = [];
+      function* rec(remaining: SwissStanding[]): Generator<{ boards: Boards; residents: SwissStanding[] }> {
+        const a = remaining[0];
+        if (a === undefined || !carried.has(a.entrantId)) {
+          yield { boards: [...chosen], residents: remaining };
+          return;
+        }
+        const others = remaining.slice(1);
+        for (const b of orderCandidates(a, others)) {
+          if (!hardLegal(a, b)) continue;
+          chosen.push([a, b]);
+          yield* rec(others.filter((o) => o.entrantId !== b.entrantId));
+          chosen.pop();
+        }
+      }
+      yield* rec([...rest]);
+    }
+    interface Candidate {
+      floaters: SwissStanding[];
+      boards: Boards;
+      residents: SwissStanding[];
+      cost: FloatCost;
+      order: number;
+    }
+    const deadFloaters = new Set<string>();
+    let found: Found = "none";
+    const attempt = (c: Candidate): Found => {
+      const key = c.floaters.map((f) => f.entrantId).join(",");
+      if (deadFloaters.has(key)) return "none";
+      let belowNone = false;
+      const here = matchWithin(c.residents, (boards) => {
+        const answer = below(c.floaters, [...c.boards, ...boards]);
+        if (answer === "none") belowNone = true;
+        return answer;
+      });
+      if (belowNone) deadFloaters.add(key);
+      return here;
+    };
+    const kept: Candidate[] = [];
+    for (const floaters of floaterChoices(current, fc, floatCountOf)) {
+      if (!spend()) return "out";
+      const set = new Set(floaters.map((f) => f.entrantId));
+      const rest = current.filter((c) => !set.has(c.entrantId));
+      if (!coloursCanPair(rest)) continue;
+      for (const { boards, residents } of carriedBoards(rest)) {
+        if (!spend()) return "out";
+        const candidate: Candidate = { floaters, boards, residents, cost: costOf(floaters, boards), order: kept.length };
+        if (compareFloatCost(candidate.cost, best) !== 0) {
+          kept.push(candidate);
+          continue;
+        }
+        const here = attempt(candidate);
+        if (here === "accepted") return "accepted";
+        if (here === "rejected") found = "rejected";
+      }
+    }
+    kept.sort((a, b) => compareFloatCost(a.cost, b.cost) || a.order - b.order);
+    for (const candidate of kept) {
+      if (!spend()) return "out";
+      const here = attempt(candidate);
+      if (here === "accepted") return "accepted";
+      if (here === "rejected") found = "rejected";
+    }
+    return found;
+  };
 
   const pairFrom = (
     groups: readonly SwissStanding[][],
@@ -493,6 +735,15 @@ export function pairRound(
     let found: Found = "none";
     for (let fc = parity; fc <= maxFloat; fc += 2) {
       if (isLast && fc !== 0) break;
+      if (floatWindow !== undefined) {
+        const here = pairGroupByFloats(current, carry, fc, floatWindow, (floaters, boards) =>
+          pairFrom(groups, gi + 1, floaters, (below) => k([...boards, ...below])),
+        );
+        if (here === "out") return found;
+        if (here === "accepted") return "accepted";
+        if (here === "rejected") found = "rejected";
+        continue;
+      }
       for (const floaters of floaterChoices(current, fc, floatCountOf)) {
         if (!spend()) return found;
         const set = new Set(floaters.map((f) => f.entrantId));
