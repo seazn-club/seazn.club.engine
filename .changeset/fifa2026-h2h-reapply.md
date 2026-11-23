@@ -15,7 +15,7 @@ Football's FIFA 2026 tie-break order now re-applies the head-to-head criteria to
   - `h2hScope: "overall"`;
   - an incomplete mini-schedule (`partialSchedule`);
   - any order a division or stage stores itself, and any pinned order.
-  In seazn.club a stage pins its order when it starts, so a started stage keeps the order it was pinned with. Only pending and new stages take this one.
+  In seazn.club a stage pins its order when it starts, so a started stage keeps the order it was pinned with. Only pending and new stages take this one, with one exception: when an organiser clears the own order of an active stage that has no score yet, `repinStageOwnRules` re-reads the live default and re-pins it, so that stage takes this order too.
 - **The mechanism is the existing `h2h_reapply` modifier** (UEFA 20.01(d), IIHF). It reruns the block on each smaller subset left level, among that subset's own matches, until no subset shrinks. With four or more teams level, a re-application that itself splits the group is applied once more to the remainder.
 - **No fold change.** `FOLD_EPOCH` and `FOLD_MINOR` are unchanged. Ranking a table is not part of a match's fold, and no golden stream, state, outcome, summary or standings delta moves.
 - **Rules.** FB-TB-1 (`rules/football.md`) now states step 2 and cites Art. 13. FB-TB-2 says that `uefa` and FIFA 2026 now share an order. The status stays `deviation 197 2026-10-24`, because the owner's 2026-11-23 approval has no ruling number. The citation column cites it instead.

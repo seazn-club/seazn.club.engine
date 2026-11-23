@@ -99,9 +99,9 @@ describe("h2h_reapply — re-application (UEFA 20.01(d), FWC26 Art. 13 step 2) v
     fb("D", "Jd", 1, 0), // D wins 1-0 → overall GD 0
   ];
 
-  it("UEFA and FIFA 2026 (h2h_reapply after the block) rank the pair by their direct game", () => {
+  // The football preset's own keys are proved by defaults-sweep.test.ts and tables-rulebook.test.ts; FIFA2026 here is a copy of UEFA.
+  it("UEFA (h2h_reapply after the block) ranks the pair by their direct game", () => {
     expect(rankOrder(entrants, results, UEFA).slice(0, 4)).toEqual(["A", "B", "C", "D"]);
-    expect(rankOrder(entrants, results, FIFA2026).slice(0, 4)).toEqual(["A", "B", "C", "D"]);
   });
 
   it("the block once (no modifier, fall-through) ranks the still-level pair by overall criteria", () => {
