@@ -1947,10 +1947,10 @@ function displayedGoals(state: FootballState): { home: number; away: number } {
 // ---------------------------------------------------------------------------
 
 export const FOOTBALL_TIEBREAKERS: Record<"fifa2026" | "uefa" | "classic", TiebreakerKey[]> = {
-  // points → H2H points → H2H GD → H2H goals → overall GD → overall GF →
-  // fair play → drawing of lots (deviation: FIFA's world ranking, RB2B-4).
-  fifa2026: ["points", "h2h_points", "h2h_diff", "h2h_for", "diff", "for", "fair_play", "lots"],
-  // W2d (spec §5.10, FB-TB-2): UEFA Art. 20.01(d) — fifa2026 with the H2H block re-applied to any subset it leaves level.
+  // FWC26 Art. 13: points → H2H points, GD, goals (step 1) → the same re-applied to the teams still level (step 2; repeated until
+  // stable, a deviation, FB-TB-1) → overall GD → GF → fair play → drawing of lots (deviation: FIFA's world ranking, RB2B-4).
+  fifa2026: ["points", "h2h_points", "h2h_diff", "h2h_for", "h2h_reapply", "diff", "for", "fair_play", "lots"],
+  // W2d (spec §5.10, FB-TB-2): UEFA Art. 20.01(d) — the H2H block re-applied to any subset it leaves level, as fifa2026 does.
   // The criteria UEFA lists after overall goals are not modelled, so the tail is fifa2026's (INFERRED from RBG:111-112,
   // which names only re-application); 20.02's penalties between two level teams is not offered (FB-TB-3, RB2B-5).
   uefa: ["points", "h2h_points", "h2h_diff", "h2h_for", "h2h_reapply", "diff", "for", "fair_play", "lots"],

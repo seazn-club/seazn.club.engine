@@ -7,7 +7,7 @@ import type { TiebreakerKey } from "../sport/module.ts";
 import { foldResults, type FixtureResult } from "./standings.ts";
 import { rankStandings } from "./tiebreakers.ts";
 
-const FIFA2026: TiebreakerKey[] = ["points", "h2h_points", "h2h_diff", "h2h_for", "diff", "for", "fair_play", "lots"];
+const FIFA2026: TiebreakerKey[] = ["points", "h2h_points", "h2h_diff", "h2h_for", "h2h_reapply", "diff", "for", "fair_play", "lots"];
 const CLASSIC: TiebreakerKey[] = ["points", "diff", "for", "h2h_points", "h2h_diff", "h2h_for", "fair_play", "lots"];
 
 function fb(home: string, away: string, hg: number, ag: number): FixtureResult {

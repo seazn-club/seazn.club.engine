@@ -32,7 +32,13 @@ type Order = readonly TiebreakerKey[];
 // The orders: SPEC §5.10 (signed, D5) and the pre-W2d constant each sport ranked by (the plan's Anchors row).
 // ---------------------------------------------------------------------------
 
-const FIFA2026: Order = ["points", "h2h_points", "h2h_diff", "h2h_for", "diff", "for", "fair_play", "lots"];
+// FIFA World Cup 26 Regulations, Art. 13 (owner approval 2026-11-23): step 1 a)-c) head-to-head points, goal difference and
+// goals among the teams concerned; step 2 a)-c) "applied to the matches between the remaining teams only"; then d) overall
+// goal difference, e) overall goals, f) team conduct (fair play); step 3's world ranking is a drawing of lots here (RB2B-4).
+// Deviation (owner 2026-11-23): `h2h_reapply` repeats step 2 until no group shrinks, where FIFA's text applies it once.
+const FIFA2026: Order = ["points", "h2h_points", "h2h_diff", "h2h_for", "h2h_reapply", "diff", "for", "fair_play", "lots"];
+// Football's pre-W2d order (the plan's Anchors row), which `fifa2026` kept until 2026-11-23: the head-to-head block once.
+const FOOTBALL_PRE_W2D: Order = ["points", "h2h_points", "h2h_diff", "h2h_for", "diff", "for", "fair_play", "lots"];
 const UEFA: Order = ["points", "h2h_points", "h2h_diff", "h2h_for", "h2h_reapply", "diff", "for", "fair_play", "lots"];
 const CLASSIC: Order = ["points", "diff", "for", "h2h_points", "h2h_diff", "h2h_for", "fair_play", "lots"];
 
@@ -276,7 +282,7 @@ const PC: Ledger = { goals_pc: 1 };
 const BOOK: Readonly<Record<string, Book>> = {
   football: {
     signed: FIFA2026,
-    old: FIFA2026,
+    old: FOOTBALL_PRE_W2D,
     cases: [
       {
         title: "FB-TB-1 two level on points: their match (h2h points); two level after a drawn meeting: overall goal difference (RBG:104-106)",
@@ -293,6 +299,8 @@ const BOOK: Readonly<Record<string, Book>> = {
         matches: [fb("A", "B", 2, 0), fb("B", "C", 1, 0), fb("C", "A", 1, 0)],
         expect: ["A", "C", "B"],
         splits: { A: "h2h_diff", C: "h2h_diff", B: "h2h_diff" },
+        // Step 1 separates all three: the re-application (step 2) is not reached, so the pre-2026-11-23 order agrees.
+        old: ["A", "C", "B"],
       },
       {
         title: "FB-TB-1 three level on points and h2h goal difference: head-to-head goals (RBG:104)",
@@ -300,6 +308,7 @@ const BOOK: Readonly<Record<string, Book>> = {
         matches: [fb("C", "A", 3, 2), fb("A", "B", 1, 0), fb("B", "C", 2, 1)],
         expect: ["C", "A", "B"],
         splits: { C: "h2h_for", A: "h2h_for", B: "h2h_for" },
+        old: ["C", "A", "B"],
       },
       {
         title: "FB-TB-1 level after a drawn meeting and on goal difference: overall goals scored (RBG:105)",
@@ -307,6 +316,8 @@ const BOOK: Readonly<Record<string, Book>> = {
         matches: [fb("A", "B", 2, 2), fb("B", "C", 3, 1), fb("A", "D", 2, 0)],
         expect: ["B", "A", "C", "D"],
         splits: { B: "for", A: "for", C: "for", D: "for" },
+        // Two level after a drawn meeting: re-applying their one match decides nothing, so goal difference, then goals.
+        old: ["B", "A", "C", "D"],
       },
       {
         title: "FB-TB-1 fair play (−1 yellow, −4 direct red), then a drawing of lots (deviation: FIFA's world ranking, RB2B-4)",
@@ -319,17 +330,81 @@ const BOOK: Readonly<Record<string, Book>> = {
         old: ["A", "B", "D", "C"],
       },
       {
-        title: "FB-TB-1 three level on points: fifa2026 applies the mini-league once, then overall goal difference (RBG:108-109)",
-        // X 1-0 Y, Y 2-1 Z, Z 2-1 X, and each beat D (X 1-0, Y 3-0, Z 1-0): X, Y, Z 6 points. Mini-league: 3 points
-        // each, GD 0 each, goals Z 3, X 2, Y 2 → Z; X, Y still level → fifa2026 falls through: overall GD Y +3, X +1.
+        title: "FB-TB-1 three level on points, two level on mini-league points: step 1 b) reads the three-team mini-league, not the pair's own match (FWC26 Art. 13 step 1)",
+        // A 1-1 B, A 3-0 C, B 1-0 C; A 1-0 O1, B 4-0 O2, C 1-0 O3, C 2-0 O4, C 0-0 O1: A, B, C 7 points. Step 1 among
+        // the three: a) A 4, B 4, C 0 → C third; b) A +3, B +1 → A, B. Every team is ranked, so step 2 is not reached.
+        // (Re-running the block on A, B alone, ITTF-style, would read their 1-1 and fall to overall GD: B +5, A +4.)
+        // O1 1 point; O3, O4, O2 0 points, never met → overall GD −1, −2, −4.
+        matches: [
+          fb("A", "B", 1, 1), fb("A", "C", 3, 0), fb("B", "C", 1, 0),
+          fb("A", "O1", 1, 0), fb("B", "O2", 4, 0), fb("C", "O3", 1, 0), fb("C", "O4", 2, 0), fb("C", "O1", 0, 0),
+        ],
+        expect: ["A", "B", "C", "O1", "O3", "O4", "O2"],
+        splits: { A: "h2h_diff", B: "h2h_diff", C: "h2h_points", O1: null, O3: "diff", O4: "diff", O2: "diff" },
+        old: ["A", "B", "C", "O1", "O3", "O4", "O2"],
+      },
+      {
+        title: "FB-TB-1 three level on points, two still level after step 1: a) to c) re-applied to the matches between those two only (FWC26 Art. 13 step 2)",
+        // X 1-0 Y, Y 2-1 Z, Z 2-1 X, and each beat D (X 1-0, Y 3-0, Z 1-0): X, Y, Z 6 points. Step 1 among the three:
+        // 3 points each, GD 0 each, goals Z 3, X 2, Y 2 → Z first; X, Y still level. Step 2, their one match: X beat Y
+        // → X. Without step 2 (the order before 2026-11-23) d) decides instead: overall GD Y +3, X +1 → Y.
         matches: [fb("X", "Y", 1, 0), fb("Y", "Z", 2, 1), fb("Z", "X", 2, 1), fb("X", "D", 1, 0), fb("Y", "D", 3, 0), fb("Z", "D", 1, 0)],
-        expect: ["Z", "Y", "X", "D"],
-        splits: { Z: "h2h_for", Y: "diff", X: "diff", D: null },
+        expect: ["Z", "X", "Y", "D"],
+        splits: { Z: "h2h_for", X: "h2h_points", Y: "h2h_points", D: null },
+        without: { at: 4, expect: ["Z", "Y", "X", "D"] },
+        old: ["Z", "Y", "X", "D"],
+      },
+      {
+        title: "FB-TB-1 pins the DELIBERATE DEVIATION from FWC26 Art. 13 (owner 2026-11-23): four level, step 2 leaves two level, and the re-application repeats on those two (C beat D) → A, C, D, B; FIFA's text re-applies once and would give A, D, C, B",
+        // A, B, C, D 9 points: A 2-1 B, A 4-0 C, A 4-0 D, C 2-0 D, B 2-1 C, D 3-0 B; B, C 1-0 and D 3-0 over O1 and O2.
+        // Step 1 among the four: A 9 → first; B, C, D 3 points, GD −3, goals 3 each. Step 2 among B, C, D: 3 points each, GD
+        // C +1, D +1, B −2 → B last; C, D level on goals (3). Repeated on C, D alone: C beat D 2-0 → C (h2h_points). FIFA's
+        // single re-application stops there and d) decides: overall GD D +3, C −1 → D. Reachable only with four or more
+        // level in a table of five or more teams, or a double round-robin: in a single round-robin group of four the pair's
+        // results against the rest cannot leave all four level.
+        // O1, O2 0 points, never met, GD −5 and no goals each → the stored draw O1, O2.
+        matches: [
+          fb("A", "B", 2, 1), fb("A", "C", 4, 0), fb("A", "D", 4, 0), fb("C", "D", 2, 0), fb("B", "C", 2, 1), fb("D", "B", 3, 0),
+          fb("B", "O1", 1, 0), fb("B", "O2", 1, 0), fb("C", "O1", 1, 0), fb("C", "O2", 1, 0), fb("D", "O1", 3, 0), fb("D", "O2", 3, 0),
+        ],
+        lots: [["O1", "O2"]],
+        expect: ["A", "C", "D", "B", "O1", "O2"],
+        splits: { A: "h2h_points", C: "h2h_points", D: "h2h_points", B: "h2h_diff", O1: "lots", O2: "lots" },
+      },
+      {
+        title: "FB-TB-1 step 2 decides nothing between two who drew: d) overall goal difference ranks them (FWC26 Art. 13 step 2)",
+        // P 1-1 Q, P 2-0 R, Q 2-0 R; P 1-0 O1, Q 3-0 O2, R 1-0 O1, R 1-0 O2, R 0-0 O3: P, Q, R 7 points. Step 1: P 4, Q 4,
+        // R 0 → R third; P, Q level on mini GD (+2) and goals (3). Step 2, their 1-1: level again, so "criteria d) to f)
+        // shall apply": overall GD Q +5, P +3. O3 1 point; O1, O2 0 points, never met → overall GD −2, −4.
+        matches: [
+          fb("P", "Q", 1, 1), fb("P", "R", 2, 0), fb("Q", "R", 2, 0),
+          fb("P", "O1", 1, 0), fb("Q", "O2", 3, 0), fb("R", "O1", 1, 0), fb("R", "O2", 1, 0), fb("R", "O3", 0, 0),
+        ],
+        expect: ["Q", "P", "R", "O3", "O1", "O2"],
+        splits: { Q: "diff", P: "diff", R: "h2h_points", O3: null, O1: "diff", O2: "diff" },
+        old: ["Q", "P", "R", "O3", "O1", "O2"],
+      },
+      {
+        title: "FB-TB-1 the second step does not restart: two left level after d) and e) go to f) team conduct, never back to their own match (FWC26 Art. 13 step 2)",
+        // A 1-0 B, B 1-0 C, C 1-0 A; A 3-0 O1, B 1-0 O2 (B a yellow, −1), C 1-0 O3, O2 1-0 O3: A, B, C 6 points. Step 1:
+        // 3 points, GD 0 and 1 goal each, no team ranked, so step 2 has no remaining teams to re-apply to. d) overall GD
+        // A +3, B +1, C +1 → A; B, C level on e) goals (2 each); f) conduct B −1, C 0 → C. B beat C, but "the second
+        // step of the ranking does not restart for the two or three teams remaining after application of a criterion".
+        // O2 3 points; O3, O1 0 points, never met → overall GD −2, −3. C's ledger records its 0 as football's does
+        // (`sideMetrics` writes fair_play on every side while it is tracked): an unrecorded metric sorts last.
+        matches: [
+          fb("A", "B", 1, 0), fb("B", "C", 1, 0), fb("C", "A", 1, 0),
+          fb("A", "O1", 3, 0), fb("B", "O2", 1, 0, [{ yellow: 1, fair_play: -1 }, {}]), fb("C", "O3", 1, 0, [{ fair_play: 0 }, {}]),
+          fb("O2", "O3", 1, 0),
+        ],
+        expect: ["A", "C", "B", "O2", "O3", "O1"],
+        splits: { A: "diff", C: "fair_play", B: "fair_play", O2: null, O3: "diff", O1: "diff" },
+        old: ["A", "C", "B", "O2", "O3", "O1"],
       },
     ],
     extras: [
       {
-        title: "FB-TB-2 the uefa preset re-applies head-to-head to the two left level, where fifa2026 falls through; classic is GD first (RBG:108-112)",
+        title: "FB-TB-2 the uefa preset is unchanged and re-applies head-to-head to the two left level, as fifa2026 now does; classic is GD first (RBG:108-112)",
         run: (module) => {
           const presets = module.tablePresets?.("league");
           const order = (id: string): Order => {
@@ -348,8 +423,11 @@ const BOOK: Readonly<Record<string, Book>> = {
           expect(uefa.rows.map((r) => r.tieBreak?.key ?? null)).toEqual(["h2h_for", "h2h_points", "h2h_points", null]);
           // classic: overall GD Y +3, then X, Z +1 → goals Z 4, X 3.
           expect(ids(rank({ rules: { ...rules, tiebreakers: order("classic") }, results }).rows)).toEqual(["Y", "Z", "X", "D"]);
-          // The default is fifa2026, which does not re-apply.
-          expect(ids(rank({ rules, results }).rows)).toEqual(["Z", "Y", "X", "D"]);
+          // The default is fifa2026, which re-applies too (FWC26 Art. 13 step 2): the same order and the same traces as uefa.
+          const fifa = rank({ rules, results });
+          expect(rules.tiebreakers).toEqual(order("fifa2026"));
+          expect(ids(fifa.rows)).toEqual(["Z", "X", "Y", "D"]);
+          expect(fifa.rows.map((r) => r.tieBreak?.key ?? null)).toEqual(["h2h_for", "h2h_points", "h2h_points", null]);
         },
       },
       {
@@ -1078,7 +1156,8 @@ const BOOK: Readonly<Record<string, Book>> = {
   },
 };
 
-// The sports whose pre-W2d order is the signed one (SPEC §5.10 "unchanged"; football's fifa2026 is the old default).
+// The sports whose pre-W2d order is the signed one (SPEC §5.10 "unchanged"). Football was one until 2026-11-23, when
+// fifa2026 took FWC26 Art. 13's step 2 (the re-application) that its pre-W2d default lacked.
 // Derived from the two typed orders above, so the list cannot rot: a differential against the old order is impossible
 // for these, and the test says so by name rather than skipping it.
 const UNCHANGED = Object.entries(BOOK)
@@ -1104,13 +1183,13 @@ function decidedPositions(book: Book): Set<number> {
 
 // The case titles below are data, which the rules checker cannot read, so this group names the rows that only these cases prove
 // (W2d Task 21, the proof fold): each id here leads at least one case title in its sport's book.
-describe("W2d T11 — rulebook scenarios per sport (spec §13.1): BG-TB-2, CK-TB-1, VB-TB-1, TN-TB-2, CA-TB-1 and GN-TB-1", () => {
+describe("W2d T11 — rulebook scenarios per sport (spec §13.1): FB-TB-1, BG-TB-2, CK-TB-1, VB-TB-1, TN-TB-2, CA-TB-1 and GN-TB-1", () => {
   it("states the book's scope first: one book per registry sport, no book for a sport the registry lacks", () => {
     const registry = builtinModules.map((m) => m.key).sort();
     expect(registry.length).toBeGreaterThan(0);
     expect(Object.keys(BOOK).sort()).toEqual(registry);
-    // §5.10 "unchanged": carrom and generic; football's default fifa2026 was already the pre-W2d order.
-    expect(UNCHANGED).toEqual(["carrom", "football", "generic"]);
+    // §5.10 "unchanged": carrom and generic. Football's default fifa2026 was the pre-W2d order until it took step 2.
+    expect(UNCHANGED).toEqual(["carrom", "generic"]);
   });
 
   for (const module of builtinModules) {
