@@ -107,7 +107,10 @@ function rankAll(results: readonly FixtureResult[], cascade: readonly Tiebreaker
 const BWF: TiebreakerKey[] = ["wins", "h2h_two", "set_diff", "h2h_two", "point_diff", "h2h_two", "lots"];
 const ITTF: TiebreakerKey[] = ["points", "h2h_points", "h2h_set_ratio", "h2h_point_ratio", "h2h_exclusion", "lots"];
 const ITTF_WITHOUT_EXCLUSION: TiebreakerKey[] = ["points", "h2h_points", "h2h_set_ratio", "h2h_point_ratio", "lots"];
-const FIFA2026: TiebreakerKey[] = ["points", "h2h_points", "h2h_diff", "h2h_for", "diff", "for", "fair_play", "lots"];
+// FWC26 Art. 13 (owner approval 2026-11-23): step 2 re-applies the block to the teams it leaves level, as UEFA 20.01(d) does.
+const FIFA2026: TiebreakerKey[] = ["points", "h2h_points", "h2h_diff", "h2h_for", "h2h_reapply", "diff", "for", "fair_play", "lots"];
+// The block once, no re-application: football's fifa2026 until 2026-11-23.
+const H2H_ONCE: TiebreakerKey[] = ["points", "h2h_points", "h2h_diff", "h2h_for", "diff", "for", "fair_play", "lots"];
 const UEFA: TiebreakerKey[] = ["points", "h2h_points", "h2h_diff", "h2h_for", "h2h_reapply", "diff", "for", "fair_play", "lots"];
 const IIHF: TiebreakerKey[] = ["points", "h2h_points", "h2h_diff", "h2h_for", "h2h_reapply", "diff", "for", "seed", "lots"];
 const IIHF_WITHOUT_REAPPLY: TiebreakerKey[] = ["points", "h2h_points", "h2h_diff", "h2h_for", "diff", "for", "seed", "lots"];
@@ -247,8 +250,9 @@ describe("W2d T4 — the new tie-break keys (spec §5.6)", () => {
 
   it("FB-TB-2 UEFA re-application: a 4-way h2h tie reduced to 2 is re-applied among the 2 only (RBG:108-110)", () => {
     // A, B, C, D all 6 points. Their mini-league: A 6, B 6, C 3, D 3, each pair level on h2h GD and goals.
-    // UEFA 20.01(d) re-applies the h2h criteria to the pair alone: A beat B, C beat D → A, B, C, D.
-    // FIFA (no re-application) falls through to overall GD: B 0 > A −2, C +2 > D 0 → B, A, C, D.
+    // UEFA 20.01(d) re-applies the h2h criteria to the pair alone: A beat B, C beat D → A, B, C, D. So does FWC26 Art. 13
+    // step 2 ("applied to the matches between the remaining teams only"). The block once, with no re-application, falls
+    // through to overall GD: B 0 > A −2, C +2 > D 0 → B, A, C, D.
     const results = [
       fb("A", "B", 1, 0), fb("A", "C", 1, 0), fb("D", "A", 1, 0), fb("B", "C", 1, 0), fb("B", "D", 1, 0), fb("C", "D", 1, 0),
       fb("Ja", "A", 3, 0), fb("Jb", "B", 1, 0), fb("C", "Jc", 3, 0), fb("D", "Jd", 1, 0),
@@ -256,7 +260,8 @@ describe("W2d T4 — the new tie-break keys (spec §5.6)", () => {
     const uefa = rankAll(results, UEFA);
     expect(ids(uefa).slice(0, 4)).toEqual(["A", "B", "C", "D"]);
     expect([rowOf(uefa, "A").tieBreak?.key, rowOf(uefa, "C").tieBreak?.key]).toEqual(["h2h_points", "h2h_points"]);
-    expect(ids(rankAll(results, FIFA2026)).slice(0, 4)).toEqual(["B", "A", "C", "D"]);
+    expect(ids(rankAll(results, FIFA2026)).slice(0, 4)).toEqual(["A", "B", "C", "D"]);
+    expect(ids(rankAll(results, H2H_ONCE)).slice(0, 4)).toEqual(["B", "A", "C", "D"]);
   });
 
   it("IH-TB-1 IIHF re-application down to 2 (RBG:345-346); re-application with no progress terminates", () => {

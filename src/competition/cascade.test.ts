@@ -10,10 +10,12 @@ import { foldResults, type FixtureResult, type StandingsRow } from "./standings.
 import { buildSwissLedger, rankStandings } from "./tiebreakers.ts";
 
 // The two football presets under test (spec 04 §1.6): H2H-first vs GD-first.
-const FIFA2026: TiebreakerKey[] = ["points", "h2h_points", "h2h_diff", "h2h_for", "diff", "for", "fair_play", "lots"];
+const FIFA2026: TiebreakerKey[] = ["points", "h2h_points", "h2h_diff", "h2h_for", "h2h_reapply", "diff", "for", "fair_play", "lots"];
 const CLASSIC: TiebreakerKey[] = ["points", "diff", "for", "h2h_points", "h2h_diff", "h2h_for", "fair_play", "lots"];
-// UEFA 20.01(d): the FIFA block closed by the re-application modifier (W2d PS-9d — the `h2hRecursive` flag's cases).
+// UEFA 20.01(d): the FIFA block closed by the re-application modifier (W2d PS-9d — the `h2hRecursive` flag's cases). FIFA2026
+// above has the same keys since FWC26 Art. 13 step 2 joined it (2026-11-23); H2H_ONCE is the block once, as fifa2026 was.
 const UEFA: TiebreakerKey[] = ["points", "h2h_points", "h2h_diff", "h2h_for", "h2h_reapply", "diff", "for", "fair_play", "lots"];
+const H2H_ONCE: TiebreakerKey[] = ["points", "h2h_points", "h2h_diff", "h2h_for", "diff", "for", "fair_play", "lots"];
 
 // Football-shaped decided fixture (gf/ga/gd ledger, 3/1/0 points).
 function fb(home: string, away: string, hg: number, ag: number): FixtureResult {
@@ -75,12 +77,12 @@ describe("FIFA 2026 H2H-first vs classic GD-first (golden — spec 05 §4, PROMP
 // UEFA recursive vs FIFA fall-through (spec 05 §4.2, PROMPT-08 §3).
 // ---------------------------------------------------------------------------
 
-describe("h2h_reapply — UEFA re-application vs FIFA fall-through (spec 05 §4.2; W2d PS-9d, was h2hRecursive)", () => {
+describe("h2h_reapply — re-application (UEFA 20.01(d), FWC26 Art. 13 step 2) vs the block once (spec 05 §4.2; W2d PS-9d, was h2hRecursive)", () => {
   // A,B,C,D level on 6 pts (jobber games equalise). The 4-way h2h splits into
-  // {A,B} over {C,D} and leaves each pair level on h2h pts/GD/GF. UEFA re-runs
-  // the head-to-head among just the pair (A beat B, C beat D). FIFA falls
-  // through to overall GD, which the jobber results tilt the OTHER way (B>A, C>D
-  // on overall GD ⇒ B,A,...). The pair order flips between the two.
+  // {A,B} over {C,D} and leaves each pair level on h2h pts/GD/GF. UEFA and FIFA
+  // re-run the head-to-head among just the pair (A beat B, C beat D). The block
+  // once falls through to overall GD, which the jobber results tilt the OTHER way
+  // (B>A, C>D on overall GD ⇒ B,A,...). The pair order flips between the two.
   const entrants = ["A", "B", "C", "D", "Ja", "Jb", "Jc", "Jd"];
   const results: FixtureResult[] = [
     // Among the tie group (only these count for head-to-head).
@@ -97,18 +99,19 @@ describe("h2h_reapply — UEFA re-application vs FIFA fall-through (spec 05 §4.
     fb("D", "Jd", 1, 0), // D wins 1-0 → overall GD 0
   ];
 
-  it("UEFA (h2h_reapply after the block) ranks the pair by their direct game", () => {
+  it("UEFA and FIFA 2026 (h2h_reapply after the block) rank the pair by their direct game", () => {
     expect(rankOrder(entrants, results, UEFA).slice(0, 4)).toEqual(["A", "B", "C", "D"]);
+    expect(rankOrder(entrants, results, FIFA2026).slice(0, 4)).toEqual(["A", "B", "C", "D"]);
   });
 
-  it("FIFA (no modifier, fall-through) ranks the still-level pair by overall criteria", () => {
-    expect(rankOrder(entrants, results, FIFA2026).slice(0, 4)).toEqual(["B", "A", "C", "D"]);
+  it("the block once (no modifier, fall-through) ranks the still-level pair by overall criteria", () => {
+    expect(rankOrder(entrants, results, H2H_ONCE).slice(0, 4)).toEqual(["B", "A", "C", "D"]);
   });
 
   it("the h2h_reapply modifier changes the result on the same fixtures", () => {
-    const uefa = rankOrder(entrants, results, UEFA);
-    const fifa = rankOrder(entrants, results, FIFA2026);
-    expect(uefa).not.toEqual(fifa);
+    const reapplied = rankOrder(entrants, results, UEFA);
+    const once = rankOrder(entrants, results, H2H_ONCE);
+    expect(reapplied).not.toEqual(once);
   });
 });
 

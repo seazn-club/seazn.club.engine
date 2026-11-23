@@ -33,7 +33,9 @@ type Order = readonly TiebreakerKey[];
 
 // SPEC §5.10, the signed round-robin, league and group defaults (D5), one per sport key. The tennis order repeats
 // `h2h_two` after each step (OC3; ATP C.3, RBS:370-371).
-const FIFA2026: Order = ["points", "h2h_points", "h2h_diff", "h2h_for", "diff", "for", "fair_play", "lots"];
+// Football: FIFA World Cup 26 Regulations Art. 13 — step 1 the head-to-head block, step 2 that block re-applied to the
+// teams still level (owner approval 2026-11-23), then overall goal difference, goals, team conduct, lots (RB2B-4).
+const FIFA2026: Order = ["points", "h2h_points", "h2h_diff", "h2h_for", "h2h_reapply", "diff", "for", "fair_play", "lots"];
 const SIGNED: Readonly<Record<string, Order>> = {
   football: FIFA2026,
   hockey: ["points", "wins", "diff", "for", "h2h_points", "h2h_wins", "h2h_diff", "h2h_for", "field_goals", "lots"],
@@ -75,7 +77,7 @@ const SWISS: Readonly<Record<string, Order>> = {
 // OC1: the Swiss orders before W3 (plan Anchors row, main@e97823e4d8), which W2d kept. A stage pinned to one still ranks
 // by its pin (X-TB-2): production's Swiss stage was pinned to the badminton one by the W2d migration (B1).
 const PRE_W3_SWISS: Readonly<Record<string, Order>> = {
-  football: FIFA2026,
+  football: ["points", "h2h_points", "h2h_diff", "h2h_for", "diff", "for", "fair_play", "lots"],
   hockey: ["points", "diff", "for", "h2h_points", "seed"],
   icehockey: ["points", "h2h_points", "h2h_diff", "h2h_for", "diff", "for", "seed"],
   boardgame: ["points", "buchholz_cut1", "buchholz", "sberger", "direct", "wins", "lots"],
@@ -88,7 +90,8 @@ const PRE_W3_SWISS: Readonly<Record<string, Order>> = {
   generic: ["points", "diff", "for", "h2h_points", "lots"],
 };
 
-// SPEC §5.10's stage presets, by sport: football's named orders (`uefa` = fifa2026 with `h2h_reapply` after the block;
+// SPEC §5.10's stage presets, by sport: football's named orders (`uefa` = UEFA 20.01 a)-d), the block closed by
+// `h2h_reapply`, the same keys as fifa2026 since FWC26 Art. 13 step 2 joined it (2026-11-23), and typed apart so a move of either shows;
 // `classic` = `FOOTBALL_TIEBREAKERS.classic`, the pre-2026 World Cup order), hockey's FIH Pro League points (HK-PT-2: a drawn
 // match goes to a shoot-out booked D 1 each, its winner +1, so 2/1; regulation W 3, L 0 — B2), chess's FIDE 1/½/0 in
 // half-points and the 3/1/0 "football scoring" some opens use (BG-PT-1, RB2B-18), never on a Swiss stage. No other
@@ -218,8 +221,8 @@ describe("W2d T11 — every sport's signed default order (spec §5.10, §13.4)",
   it("PS-7c FB-TB-4 football: a table default omits fair_play when the division's cfg does not track it and holds it when it does, and the Swiss default holds none either way (FB-TB-5); all pass validateCascade", () => {
     // single-sport: football is the one sport whose cfg carries `fairPlay` (D8); SPEC §5.10's fifa2026 row with and without
     // its fair-play step, and rulebook §5's goals chain, which has no fair-play step, on a Swiss stage.
-    const withFairPlay: Order = ["points", "h2h_points", "h2h_diff", "h2h_for", "diff", "for", "fair_play", "lots"];
-    const withoutFairPlay: Order = ["points", "h2h_points", "h2h_diff", "h2h_for", "diff", "for", "lots"];
+    const withFairPlay: Order = ["points", "h2h_points", "h2h_diff", "h2h_for", "h2h_reapply", "diff", "for", "fair_play", "lots"];
+    const withoutFairPlay: Order = ["points", "h2h_points", "h2h_diff", "h2h_for", "h2h_reapply", "diff", "for", "lots"];
     const on = football.configSchema.parse({ fairPlay: true });
     const off = football.configSchema.parse({ fairPlay: false });
     let checked = 0;
