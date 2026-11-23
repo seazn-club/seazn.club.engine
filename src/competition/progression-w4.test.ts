@@ -229,7 +229,7 @@ describe("X-PL-3 the plate's firstLosses take: every eligible first loss is a sl
   it("X-PL-3 a forfeit loser never appears in a slot, and a second call is identical", () => {
     // E9 forfeits its round-1 line to E8 (RB4-P2: out of the plate). E8 won without playing, so its first match is round 2,
     // lost to E1: a first loss (RB4-P1). Six slots still: E12, E13, E11, E10, then E8 and E3 in round 2's bracket order.
-    const source = bracketSource(thirteen({ forfeit: new Map([["se-r0-i1", "E9"]]) }));
+    const source = bracketSource(thirteen({ withdraw: new Map([["se-r0-i1", "E9"]]) }));
     const first = resolveFirst(6, source);
     expect(first.qualifiers.map((q) => q.entrantId)).toEqual(["E12", "E13", "E11", "E10", "E8", "E3"]);
     expect(first.qualifiers.map((q) => q.entrantId)).not.toContain("E9");

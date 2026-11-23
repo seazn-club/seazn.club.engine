@@ -74,14 +74,18 @@ export interface BracketFixture {
   away?: EntrantId;
   winner?: EntrantId; // set once decided/walkover
   loser?: EntrantId;
-  /** W2b (spec §5.3, W2b-R11), set by the web's `bracketWinnerLoser`: "loser" — the loser forfeited (an `award`), so it
-   *  is out of the tournament here and never drops to a losers'-bracket or third-place seat (X-DE-1); "both" — a double
-   *  walkover, no winner and no loser, both sides out here (X-DW-2). Ranks pin these entrants' elimination round to
-   *  this fixture, so they read the same answer seating does. */
+  /** W2b (spec §5.3, W2b-R11), set by the web's `bracketWinnerLoser`: "loser" — the loser is OUT OF THE STAGE here and
+   *  never drops (X-DE-1). In a double elimination the app sets it only for a withdrawn or disqualified entrant (W6,
+   *  RB6-F4); a one-loss forfeit or retirement is a plain loss (winner, loser, no walkedOver) ranked by the second loss
+   *  (RB6-F1, F11, R6). "both" — a double walkover, no winner and no loser, both sides out here (X-DW-2). */
   walkedOver?: "loser" | "both";
   /** W4 (Q4; RB4-C3; X-CH-1): the final ended in joint winners — decided, with no `winner`, no `loser` and no
    *  `walkedOver`: both its seated sides rank 1st. Only ever on the final (`isFinal`); anything else is a wiring bug. */
   jointWinners?: boolean;
+  /** W6 (X-DE-11, ruling 298): the double-elimination grand-final reset — on that one row only, as the generator marks
+   *  it (`BracketFixtureGen.conditional`). It and GF1 must carry their feeds, and GF1's two source rows their `bracket`:
+   *  `resetOwed` reads whether it is owed from them. Absent on every row = no reset to read, as before W6. */
+  conditional?: boolean;
   /** W4 (final review I1/I2; controller ruling F-I1/I2): the fixture whose winner — or loser — fills this side's seat, as
    *  the generator wires it (`BracketFixtureGen.homeFrom` / `awayFrom`). The app must pass it on dead-seat rows: a side
    *  that withdrew before its opponent was known left its seat empty and stamped dead (X-WD-3, ruling 116), and only the
@@ -195,16 +199,19 @@ export interface BracketStage {
 }
 
 /** W4 (X-FR-1, RB4-R1): an entrant's place in a stage's ranking. A table stage ranks by position (rank = index + 1); a
- *  bracket stage's ranks may tie, but only at the declared shared places (`BRACKET_SHARED_RANKS`). */
+ *  bracket stage's ranks may tie: a knockout's, stepladder's or page playoff's only at the declared shared places
+ *  (`BRACKET_SHARED_RANKS`), a double elimination's wherever entrants went out in one losers'-bracket round (W6, X-FR-7). */
 export interface FinalPlace {
   entrantId: EntrantId;
   rank: number;
 }
 
-/** W4 (X-FR-1; rulings 266, 267; plan Global Constraints, Rank places): the only ranks two entrants of a bracket may share —
- *  1st (joint winners), 2nd (a vacant title's two finalists), 3rd (the semi-final losers where no play-off decided it) and
- *  4th (both sides of a play-off neither played). Never more than two at one rank; which of these a stage may use is what
- *  its own fixtures declare (`assertCompletedBracketPlaces`). */
+/** W4 (X-FR-1; rulings 266, 267; plan Global Constraints, Rank places): the only ranks two entrants of a knockout, a
+ *  stepladder or a page playoff may share — 1st (joint winners), 2nd (a vacant title's two finalists), 3rd (the semi-final
+ *  losers where no play-off decided it) and 4th (both sides of a play-off neither played). Never more than two at one
+ *  rank; which of these a stage may use is what its own fixtures declare (`assertCompletedBracketPlaces`). A double
+ *  elimination is not bound by it: its places are shared by exit round, any number at any rank below the title (W6,
+ *  X-FR-9, ruling 297). */
 export const BRACKET_SHARED_RANKS: ReadonlySet<number> = new Set([1, 2, 3, 4]);
 
 // spec 05 §5 — the structural ledger. (fixtures_generated / fixture_replaced
@@ -272,18 +279,24 @@ export function undecidedBracketFixtures(fixtures: readonly BracketFixture[]): s
   return fixtures.filter((fixture) => !SETTLED.has(fixture.status)).map((fixture) => fixture.id);
 }
 
-/** Why a bracket stage cannot complete yet (X-CH-7), or null when it can. */
-type BracketCompletionRefusal = { reason: "no_final" } | { reason: "fixtures_undecided"; undecided: string[] };
+/** Why a bracket stage cannot complete yet (X-CH-7, X-DE-12), or null when it can. */
+type BracketCompletionRefusal =
+  | { reason: "no_final" }
+  | { reason: "fixtures_undecided"; undecided: string[] }
+  | { reason: "reset_owed"; reset: string; grandFinal: string };
 
 // Every bracket kind (knockout, double_elim, stepladder, page_playoff): the stage has a final, and EVERY fixture is
 // settled — the final, every earlier round, a third-place play-off (X-TP-4, RB4-T3) and a double-elim bracket reset alike
 // (X-CH-7, ruling 274, RB4-C7). The final alone is not enough: a semi-final still scheduled (CH-1) or a final still
-// in_play (AN-2) leaves the stage open. A voided reset and a walked-over line are settled. No final is checked first:
-// an empty list owes no fixture and would otherwise pass. The one reading of both the predicate and the refusal.
+// in_play (AN-2) leaves the stage open. A walked-over line is settled, and so is a void reset that is not owed (it does
+// not exist, RB6-G6); a void reset the LB champion earned is not (X-DE-12, ruling 298, RB6-G7). No final is checked
+// first: an empty list owes no fixture and would otherwise pass. The one reading of both the predicate and the refusal.
 function bracketCompletionRefusal(fixtures: readonly BracketFixture[]): BracketCompletionRefusal | null {
   if (!fixtures.some((fixture) => fixture.isFinal === true)) return { reason: "no_final" };
   const undecided = undecidedBracketFixtures(fixtures);
-  return undecided.length > 0 ? { reason: "fixtures_undecided", undecided } : null;
+  if (undecided.length > 0) return { reason: "fixtures_undecided", undecided };
+  const voided = voidOwedReset(fixtures);
+  return voided === undefined ? null : { reason: "reset_owed", ...voided };
 }
 
 export function isBracketStageComplete(
@@ -291,6 +304,58 @@ export function isBracketStageComplete(
   fixtures: readonly BracketFixture[],
 ): boolean {
   return bracketCompletionRefusal(fixtures) === null;
+}
+
+/** W6 (X-DE-11; rulings 293, 298; RB6-G11): whether the double-elimination grand-final reset is owed — the one answer
+ *  every reader takes (completion, the title, the app's reset row). False when no fixture is `conditional`. Otherwise,
+ *  with RESET the conditional row and GF1 the fixture both its feeds name: true iff GF1 carries no `walkedOver`, names a
+ *  winner and a loser, its winner is the entrant GF1's LB feed delivered and its loser the one its WB feed delivered.
+ *  GF1's WB feed is its one feed with side "winner" from a row with bracket "WB"; the other is its LB feed (the LB final's
+ *  winner; at n = 2 the WB final's loser). Seat order is never read (RB6-D6). The rows are read AS GIVEN, never through
+ *  `resolveDeadSeats`. Pure: it reads the rows and changes none.
+ *  CONFIG_INVALID (a wiring bug), whenever a conditional row exists: "reset_not_unique" (two conditional rows);
+ *  "reset_feed_invalid" { fixtureId } (RESET lacks a feed, or its feeds are not one winner and one loser of one listed
+ *  fixture); "grand_final_feed_invalid" { fixtureId } (GF1 lacks a feed, a feed names no listed row, or not exactly one
+ *  feed is a WB winner feed). */
+export function resetOwed(fixtures: readonly BracketFixture[]): boolean {
+  return resetReading(fixtures)?.owed === true;
+}
+
+// The reset and GF1 as `resetOwed` reads them, or undefined when no row is conditional. The single implementation.
+function resetReading(fixtures: readonly BracketFixture[]): { reset: BracketFixture; grandFinal: BracketFixture; owed: boolean } | undefined {
+  const conditional = fixtures.filter((fixture) => fixture.conditional === true);
+  const reset = conditional[0];
+  if (reset === undefined) return undefined;
+  if (conditional.length > 1) {
+    throw new EngineError("CONFIG_INVALID", `a bracket has ${conditional.length} grand-final resets`, { reason: "reset_not_unique", fixtureIds: conditional.map((f) => f.id) });
+  }
+  const byId = new Map(fixtures.map((fixture) => [fixture.id, fixture]));
+  const wiring = (reason: string, fixtureId: string): EngineError =>
+    new EngineError("CONFIG_INVALID", `bracket fixture "${fixtureId}" is not wired as a double-elimination ${reason === "reset_feed_invalid" ? "reset" : "grand final"}`, { reason, fixtureId });
+  const { homeFrom, awayFrom } = reset;
+  const grandFinal = homeFrom === undefined ? undefined : byId.get(homeFrom.fixtureId);
+  if (awayFrom === undefined || grandFinal === undefined || awayFrom.fixtureId !== grandFinal.id || awayFrom.side === homeFrom?.side) {
+    throw wiring("reset_feed_invalid", reset.id);
+  }
+  const feeds = [grandFinal.homeFrom, grandFinal.awayFrom];
+  const sources = feeds.map((ref) => (ref === undefined ? undefined : byId.get(ref.fixtureId)));
+  const wbAt = feeds.flatMap((ref, i) => (ref?.side === "winner" && sources[i]?.bracket === "WB" ? [i] : []));
+  if (sources.includes(undefined) || wbAt.length !== 1) throw wiring("grand_final_feed_invalid", grandFinal.id);
+  const delivered = (i: number): EntrantId | undefined => (feeds[i]?.side === "winner" ? sources[i]?.winner : sources[i]?.loser);
+  const wb = wbAt[0] as number;
+  const owed =
+    grandFinal.walkedOver === undefined &&
+    grandFinal.winner !== undefined &&
+    grandFinal.loser !== undefined &&
+    grandFinal.winner === delivered(1 - wb) &&
+    grandFinal.loser === delivered(wb);
+  return { reset, grandFinal, owed };
+}
+
+// The ids of an owed reset whose row is void, or undefined (X-DE-12, RB6-G7): completion refuses it and no title is read.
+function voidOwedReset(fixtures: readonly BracketFixture[]): { reset: string; grandFinal: string } | undefined {
+  const reading = resetReading(fixtures);
+  return reading?.owed === true && reading.reset.status === "void" ? { reset: reading.reset.id, grandFinal: reading.grandFinal.id } : undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -658,7 +723,8 @@ export type BracketTitle =
  *  final included (a double-elimination reset that was not needed decides nothing; the grand final before it does) —
  *  and undefined while ANY final is still unsettled (B3 fix round 1, controller ruling): a double-elimination reset
  *  seated after the grand final may yet crown the other side, so the grand final's winner is not the champion yet.
- *  Every jointWinners row is checked first, whatever the answer. */
+ *  Undefined too while the reset is owed and its row is void (X-DE-12, RB6-G7): the deciding match is then the reset
+ *  (`decidingFinal`), which decided nothing. Every jointWinners row is checked first, whatever the answer. */
 export function bracketTitle(fixtures: readonly BracketFixture[]): BracketTitle | undefined {
   const decided = decidingFinal(fixtures);
   if (fixtures.some((fixture) => fixture.isFinal === true && !SETTLED.has(fixture.status))) return undefined;
@@ -667,7 +733,9 @@ export function bracketTitle(fixtures: readonly BracketFixture[]): BracketTitle 
 
 // Completing a bracket stage is refused, never ranked provisionally, until `isBracketStageComplete` holds (X-CH-7, ruling
 // 274, RB4-C7): STAGE_NOT_READY with `reason: "no_final"` when no fixture is the final, else `reason:
-// "fixtures_undecided"` naming every fixture still owed. Its ranks then pass the strict check (X-FR-1, B3-1).
+// "fixtures_undecided"` naming every fixture still owed, else `reason: "reset_owed"` naming an earned reset that is void
+// and its grand final (X-DE-12). Its ranks then pass the strict check (X-FR-1, B3-1); a double elimination's, the title
+// and exit-round check (X-FR-9).
 export function completeBracketStage(
   stage: BracketStage,
   fixtures: readonly BracketFixture[],
@@ -677,7 +745,9 @@ export function completeBracketStage(
     const message =
       refusal.reason === "no_final"
         ? `bracket stage "${stage.id}" has no final to complete it`
-        : `bracket stage "${stage.id}" has ${refusal.undecided.length} fixture(s) not yet decided or settled: ${refusal.undecided.join(", ")}`;
+        : refusal.reason === "fixtures_undecided"
+          ? `bracket stage "${stage.id}" has ${refusal.undecided.length} fixture(s) not yet decided or settled: ${refusal.undecided.join(", ")}`
+          : `bracket stage "${stage.id}" owes a grand-final reset ("${refusal.reset}") that is void`;
     throw new EngineError("STAGE_NOT_READY", message, { stageId: stage.id, ...refusal });
   }
   // Assumption → guard (X-CH-1): a completed bracket crowned a champion, joint winners, or left the title vacant. A final
@@ -763,9 +833,16 @@ function declaredPlaces(stage: BracketStage, fixtures: readonly BracketFixture[]
 /** W4 (X-FR-1, RB4-R1; controller ruling B3-1): the STRICT check a completed bracket's ranks pass, after the structural
  *  one: standard competition ranking, with a rank shared — or left vacant — only where the stage's own fixtures declare
  *  it (`declaredPlaces`). Never more than two at one rank, and a shared rank is always one of `BRACKET_SHARED_RANKS`.
+ *  W6 (X-FR-9): a double elimination is checked by its title and its exit rounds instead (`assertDoubleElimPlaces`).
  *  Each refusal names its reason (CONFIG_INVALID). */
 export function assertCompletedBracketPlaces(stage: BracketStage, fixtures: readonly BracketFixture[], places: readonly FinalPlace[]): void {
   assertBracketPlaces(stage.entrants, places);
+  // W6 (X-FR-7, X-FR-9): a double elimination shares places by exit round, which "at most two" and BRACKET_SHARED_RANKS
+  // would refuse from 5th down.
+  if (stage.kind === "double_elim") {
+    assertDoubleElimPlaces(stage, fixtures, places);
+    return;
+  }
   // The final's loser, as the ranks read it: a withdrawn finalist's dead seat names them through its feed (final review I1).
   const declared = declaredPlaces(stage, resolveDeadSeats(fixtures));
   let before = 0;
@@ -797,6 +874,83 @@ export function assertCompletedBracketPlaces(stage: BracketStage, fixtures: read
   }
 }
 
+/** W6 (X-FR-9; ruling 297, OWNER 305(d), 306(c), 301; RB6-R1, R2, R3, R8, R10; design §5.1): a completed double
+ *  elimination's places, after the structural check, against the ONE title reading (`decidingFinal`, which reads the
+ *  owed reset) and the ONE exit-round reading (`doubleElimExitRounds`), both over the rows with their dead seats read
+ *  through their feeds, as `bracketRanks` reads them. Never "at most two", never `BRACKET_SHARED_RANKS`. CONFIG_INVALID,
+ *  in this order, the first failure thrown:
+ *  - "lane_missing" { fixtureId }: a row with no `bracket` (no exit round can be read from it);
+ *  - "exit_round_unreadable" { entrantId, fixtureId }: an entrant below the title who went out at a fixture whose exit
+ *    round cannot be read — a winners'-bracket fixture whose loser feed no row carries;
+ *  - "title_shape" { title, rankOne }: the title holders do not hold exactly their places — a champion alone at 1; joint
+ *    winners exactly the two at 1; a vacant title nobody at 1 and the decider's two sides at 2 — or no deciding match has
+ *    decided a title ("none");
+ *  - then, below the title, every pair compared, each check over every place before the next check:
+ *    "exit_round_order" { entrantId, rank, laterEntrantId, laterRank }: an entrant with a later exit round does not rank
+ *    strictly better (so a rank shared across two exit rounds is refused);
+ *    "exit_round_split" { entrantId, rank, sameRoundEntrantId, sameRoundRank }: one exit round holds two ranks;
+ *    "not_competition_ranking" { entrantId, rank, expected }: rank ≠ 1 + the entrants ranked better.
+ *  The deciding match's loser is below the title: they went out at the grand final's lane, later than every LB round, so
+ *  the relations put them 2nd alone. */
+function assertDoubleElimPlaces(stage: BracketStage, rows: readonly BracketFixture[], places: readonly FinalPlace[]): void {
+  const stageId = stage.id;
+  for (const row of rows) {
+    if (row.bracket === undefined) {
+      throw placesInvalid(`fixture "${row.id}" of double elimination "${stageId}" has no bracket lane`, { reason: "lane_missing", stageId, fixtureId: row.id });
+    }
+  }
+  const fixtures = resolveDeadSeats(rows);
+  const decided = decidingFinal(fixtures);
+  // The places the title declares, by entrant.
+  const titled = new Map<EntrantId, number>();
+  if (decided?.title.kind === "champion") titled.set(decided.title.champion, 1);
+  if (decided?.title.kind === "joint") for (const id of decided.title.winners) titled.set(id, 1);
+  if (decided?.title.kind === "vacant") for (const id of walkedOverSides(decided.fixture)) titled.set(id, 2);
+  const exit = doubleElimExitRounds(fixtures);
+  const below = places.filter((place) => !titled.has(place.entrantId));
+  for (const { entrantId } of below) {
+    const at = exit.get(entrantId);
+    if (at?.round === -Infinity) {
+      throw placesInvalid(`"${entrantId}" went out at "${at.fixtureId}", whose losers'-bracket round no row names`, { reason: "exit_round_unreadable", stageId, entrantId, fixtureId: at.fixtureId });
+    }
+  }
+  // A title holder at a place other than the title's, or anyone else at 1st.
+  const offTitle = (place: FinalPlace): boolean => {
+    const declared = titled.get(place.entrantId);
+    return declared === undefined ? place.rank === 1 : place.rank !== declared;
+  };
+  if (decided === undefined || places.some(offTitle)) {
+    const rankOne = places.filter((place) => place.rank === 1).map((place) => place.entrantId);
+    throw placesInvalid(`stage "${stageId}"'s places do not match the title its deciding match declared`, { reason: "title_shape", stageId, title: decided?.title.kind ?? "none", rankOne });
+  }
+  // An entrant with no exit round (no loss, no walkover: a voided line, no fixture) is below every LB round.
+  const exitOf = (place: FinalPlace): number => exit.get(place.entrantId)?.round ?? -Infinity;
+  for (const place of below) {
+    const later = below.find((other) => exitOf(other) > exitOf(place) && other.rank >= place.rank);
+    if (later !== undefined) {
+      throw placesInvalid(`"${later.entrantId}" went out later than "${place.entrantId}" but ranks ${later.rank}, not better than ${place.rank}`, {
+        reason: "exit_round_order", stageId, entrantId: place.entrantId, rank: place.rank, laterEntrantId: later.entrantId, laterRank: later.rank,
+      });
+    }
+  }
+  for (const place of below) {
+    const other = below.find((candidate) => exitOf(candidate) === exitOf(place) && candidate.rank !== place.rank);
+    if (other !== undefined) {
+      throw placesInvalid(`"${place.entrantId}" and "${other.entrantId}" went out in one round but rank ${place.rank} and ${other.rank}`, {
+        reason: "exit_round_split", stageId, entrantId: place.entrantId, rank: place.rank, sameRoundEntrantId: other.entrantId, sameRoundRank: other.rank,
+      });
+    }
+  }
+  for (const place of below) {
+    const expected = 1 + places.filter((other) => other.rank < place.rank).length;
+    if (place.rank !== expected) {
+      throw placesInvalid(`"${place.entrantId}" ranks ${place.rank} after ${expected - 1} entrant(s) ranked better (expected ${expected})`, {
+        reason: "not_competition_ranking", stageId, entrantId: place.entrantId, rank: place.rank, expected,
+      });
+    }
+  }
+}
+
 // A joint final's two winners. Assumptions are guards (wiring bugs, CONFIG_INVALID with a named reason; final review
 // F-m): joint winners end the final only, both sides seated, decided with no winner, no loser and no walkover.
 function jointWinnersOf(fixture: BracketFixture): readonly [EntrantId, EntrantId] {
@@ -821,9 +975,16 @@ function titleOf(fixture: BracketFixture): BracketTitle | undefined {
 // The deciding game (Q4): the latest-round settled final that decided something — a winner, joint winners, or both sides
 // walked over (a vacant title). A voided final (DE bracket reset skipped because the WB champion won GF1, spec 05 §2.4)
 // is settled for completion but decides nothing, so it never shadows GF1. Every jointWinners row is checked first, a
-// final's or not.
+// final's or not. W6 (RB6 §9; X-DE-11, X-DE-12): while the reset is owed (`resetOwed`, the one reading) the deciding
+// match is the reset, never GF1, so an owed reset that has decided nothing yet crowns nobody — the title and the ranks
+// read this one answer.
 function decidingFinal(fixtures: readonly BracketFixture[]): { fixture: BracketFixture; title: BracketTitle } | undefined {
   for (const fixture of fixtures) if (fixture.jointWinners === true) jointWinnersOf(fixture);
+  const reset = resetReading(fixtures);
+  if (reset?.owed === true) {
+    const title = SETTLED.has(reset.reset.status) ? titleOf(reset.reset) : undefined;
+    return title === undefined ? undefined : { fixture: reset.reset, title };
+  }
   let decided: { fixture: BracketFixture; title: BracketTitle } | undefined;
   for (const fixture of fixtures) {
     if (fixture.isFinal !== true || !SETTLED.has(fixture.status)) continue;
@@ -834,7 +995,7 @@ function decidingFinal(fixtures: readonly BracketFixture[]): { fixture: BracketF
 }
 
 // The entrants a `walkedOver` fixture puts out. Assumptions are guards: a double walkover decided nobody, so a row that
-// names a winner or a loser is a wiring bug; a forfeit always names who forfeited.
+// names a winner or a loser is a wiring bug; a walkover out of the stage always names who went out.
 function walkedOverSides(fixture: BracketFixture): EntrantId[] {
   if (fixture.walkedOver === "both") {
     if (fixture.winner !== undefined || fixture.loser !== undefined) {
@@ -847,7 +1008,7 @@ function walkedOverSides(fixture: BracketFixture): EntrantId[] {
     return [fixture.home, fixture.away];
   }
   if (fixture.loser === undefined) {
-    throw new Error(`bracket fixture ${fixture.id}: a forfeit (walkedOver "loser") names no loser`);
+    throw new Error(`bracket fixture ${fixture.id}: a walkover out of the stage (walkedOver "loser": withdrawn, disqualified, or a knockout forfeit) names no loser`);
   }
   return [fixture.loser];
 }
@@ -931,10 +1092,48 @@ export function resolveDeadSeats<T extends FedSeatRow>(rows: readonly T[]): T[] 
   });
 }
 
+/** W6 (X-FR-7, X-FR-8, X-FR-3; ruling 297; RB6-R3, R6, R7, R10): each entrant's EXIT ROUND in a double elimination — the
+ *  `round` of a losers'-bracket fixture, compared only with other LB rounds, so it holds for the generator's rounds
+ *  (LB = k + L) and the app's per-lane rounds (LB = L) alike. The exit fixture is the EARLIEST one a walkover put them
+ *  out at (`walkedOver` "loser" names them, "both" seats them: withdrawn, disqualified, both absent), else the LATEST
+ *  one they lost (a one-loss forfeit is a plain loss, so this is the second loss), earliest and latest by the value
+ *  below, never by raw `round`. That fixture's value: LB → its round; WB → the round of the LB fixture its loser feed
+ *  names (the seat they vacate or drop to); GF, or a WB fixture whose loser feeds the grand final (n = 2) → +∞, later
+ *  than every LB round; a WB fixture whose loser feeds no row, or a fixture with no lane → −∞. An entrant with no loss
+ *  and no walkover is absent (not in the map): below every LB round, as −∞. Each entry names the exit fixture, so the
+ *  places guard can name an unreadable one (−∞ in the map). Reads the rows it is given; the caller resolves dead seats. */
+function doubleElimExitRounds(fixtures: readonly BracketFixture[]): Map<EntrantId, { round: number; fixtureId: string }> {
+  const loserFeeds = new Map<string, BracketFixture>();
+  for (const fixture of fixtures) {
+    for (const feed of [fixture.homeFrom, fixture.awayFrom]) if (feed?.side === "loser") loserFeeds.set(feed.fixtureId, fixture);
+  }
+  const laneValue = (fixture: BracketFixture | undefined): number =>
+    fixture?.bracket === "LB" ? fixture.round : fixture?.bracket === "GF" ? Infinity : -Infinity;
+  const exitValue = (fixture: BracketFixture): number => laneValue(fixture.bracket === "WB" ? loserFeeds.get(fixture.id) : fixture);
+  const walkedOut = new Map<EntrantId, { round: number; fixtureId: string }>();
+  const lastLoss = new Map<EntrantId, { round: number; fixtureId: string }>();
+  for (const fixture of fixtures) {
+    if (!SETTLED.has(fixture.status)) continue;
+    const at = { round: exitValue(fixture), fixtureId: fixture.id };
+    if (fixture.walkedOver !== undefined) {
+      for (const id of walkedOverSides(fixture)) {
+        const earliest = walkedOut.get(id);
+        if (earliest === undefined || at.round < earliest.round) walkedOut.set(id, at);
+      }
+    } else if (fixture.loser !== undefined) {
+      const latest = lastLoss.get(fixture.loser);
+      if (latest === undefined || at.round > latest.round) lastLoss.set(fixture.loser, at);
+    }
+  }
+  return new Map([...lastLoss, ...walkedOut]);
+}
+
 // Rank entrants by bracket position (spec 05 §1 "ranking" column). Champion =
 // winner of the last `isFinal` game; runner-up = its loser; everyone else is
 // ordered by how late they were eliminated (later round = better), then by
-// seed. A knockout's semi-final losers share 3rd unless a 3rd-place play-off decides 3rd and 4th (SH-3, W4).
+// seed. A knockout's semi-final losers share 3rd unless a 3rd-place play-off decides 3rd and 4th (SH-3, W4). A double
+// elimination's entrants out below the title share a place per losers'-bracket exit round (W6, X-FR-7,
+// `doubleElimExitRounds`), and while its reset is owed the deciding match is the reset (`decidingFinal`).
 // W4 (X-FR-1): every DECLARED entrant is ranked, one in no fixture last (a stepladder seed: at their rung, X-SP-4); a
 // fixture naming anyone else reaches the structural guard as a place and is refused there. Mid-bracket the ranks are
 // provisional (B3-3): an entrant still in play ranks above every entrant out. A dead seat is read through its feed first
@@ -963,9 +1162,10 @@ export function bracketRanks(
     const prev = lastLossRound.get(fixture.loser) ?? -1;
     if (fixture.round > prev) lastLossRound.set(fixture.loser, fixture.round);
   }
-  // W2b (X-DE-1, X-DW-2): a forfeit loser and both sides of a double walkover are OUT at that fixture — seating never
-  // drops them — so their elimination round is pinned there, the earliest such fixture, and a later loss a stale row
-  // still names cannot move it. Every other entrant is eliminated at its LAST loss (a double-elim drop is not out).
+  // W2b (X-DE-1, X-DW-2): a `walkedOver` "loser" (out of the stage there: a withdrawal, a disqualification, a knockout's
+  // forfeit) and both sides of a double walkover are OUT at that fixture — seating never drops them — so their
+  // elimination round is pinned there, the earliest such fixture, and a later loss a stale row still names cannot move
+  // it. Every other entrant is eliminated at its LAST loss. A double elimination ranks by `doubleElimExitRounds` instead.
   const outAt = new Map<EntrantId, number>();
   for (const fixture of fixtures) {
     if (!SETTLED.has(fixture.status) || fixture.walkedOver === undefined) continue;
@@ -994,6 +1194,14 @@ export function bracketRanks(
     const stillIn = !settled || (fixture.isFinal === true && fixture.status === "void");
     if (!stillIn) continue;
     for (const id of [fixture.home, fixture.away]) if (id !== undefined && !outAt.has(id)) inPlay.add(id);
+  }
+  // W6 (RB6-G7, §9): while the reset is owed and has decided nothing (`decidingFinal` crowned nobody), both finalists are
+  // still in the stage with one loss each, whether or not the reset row seats them. Once the reset has decided something
+  // the title places both, and placed entrants never reach the in-play block, so the owed test alone is enough; owed
+  // means GF1 names a winner and a loser (`resetReading`), so neither id is undefined here.
+  const reset = resetReading(fixtures);
+  if (reset?.owed === true) {
+    for (const id of [reset.grandFinal.winner, reset.grandFinal.loser]) inPlay.add(id as EntrantId);
   }
 
   const seedOf = (id: EntrantId): number => stage.seeds?.get(id) ?? Number.MAX_SAFE_INTEGER;
@@ -1079,7 +1287,22 @@ export function bracketRanks(
     }
   }
 
-  for (const id of rankRest([...entrants].filter((id) => !placed.has(id)))) placeNext(id);
+  const rest = [...entrants].filter((id) => !placed.has(id));
+  if (stage.kind === "double_elim") {
+    // W6 (X-FR-7, ruling 297, RB6-R3): every other entrant by exit round, later first; one exit round shares one rank,
+    // 1 + the entrants placed above it — so three or more may share, and a round nobody lost leaves its place empty.
+    // Seed, then id, orders the list inside a group, never the rank.
+    const exit = doubleElimExitRounds(fixtures);
+    const exitOf = (id: EntrantId): number => exit.get(id)?.round ?? -Infinity;
+    rest.sort((a, b) => (exitOf(a) === exitOf(b) ? bySeedThenId(a, b) : exitOf(a) > exitOf(b) ? -1 : 1));
+    let group: { exit: number; rank: number } | undefined;
+    for (const id of rest) {
+      if (group?.exit !== exitOf(id)) group = { exit: exitOf(id), rank: placed.size + 1 };
+      placeAt(id, group.rank);
+    }
+  } else {
+    for (const id of rankRest(rest)) placeNext(id);
+  }
   assertBracketPlaces(stage.entrants, places);
   return places;
 }

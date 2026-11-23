@@ -5,19 +5,22 @@
 //
 // Feeds resolve round by round, in the generator's order (every feed names an earlier fixture):
 //   - a bye `award` is a walkover with a winner and no loser (the app's row for a bye);
-//   - `forfeit`: the named entrant forfeits — a walkover the other side wins, `walkedOver: "loser"`; the forfeiter is out
-//     there, so its onward LOSER feeds (a third-place play-off, a page playoff's Qualifier 2, a losers'-bracket seat) are
-//     dead (X-DE-1; controller ruling B3-10);
+//   - `withdraw`: the named entrant is out of the stage there (withdrawn or disqualified) — a walkover the other side
+//     wins, `walkedOver: "loser"`; its onward LOSER feeds (a third-place play-off, a page playoff's Qualifier 2, a
+//     losers'-bracket seat) are dead (X-DE-1, RB6-F4; controller ruling B3-10). In a knockout a forfeit is this row too;
+//   - `oneLossForfeit`: the named entrant forfeits ONE match (a no-show, an award against them, a retirement) — a
+//     walkover the other side wins, with a winner and a loser and NO `walkedOver`, as the app writes a double
+//     elimination's forfeit (RB6-F1, F3, F9, F11): the forfeiter drops to the losers'-bracket seat like any loser;
 //   - `doubleWalkover`: both sides walked over — `walkedOver: "both"`, no winner and no loser, every onward seat dead;
 //   - `voided`: the fixture is void, nobody advances from it;
 //   - `jointFinal`: the final, both sides seated, is decided with no winner — `jointWinners: true` (Q4, X-CH-1) — so a
 //     double-elimination bracket reset after it has no one to seat and is void;
 //   - a fixture with one seat dead is a walkover to the side present (no loser); with both dead it is void;
-//   - a double-elim bracket reset (`conditional`) is played only when the losers'-bracket champion won the grand final,
-//     and voided otherwise (spec 05 §2.4);
+//   - a double-elim bracket reset (`conditional`) is played only when it is owed (`resetOwed`, the one reading: the
+//     losers'-bracket champion won the grand final, X-DE-11), and voided otherwise (spec 05 §2.4, RB6-G6);
 //   - otherwise it is decided by `winner(home, away)`, by default the better seed (the lower seed number; home on a tie).
 import type { EntrantId } from "../core/types.ts";
-import type { BracketFixture } from "../competition/stage.ts";
+import { resetOwed, type BracketFixture } from "../competition/stage.ts";
 import type { BracketSlotRef, GeneratedBracket } from "../scheduling/bracket.ts";
 
 export interface PlayOutOptions {
@@ -25,8 +28,10 @@ export interface PlayOutOptions {
   winner?: (home: EntrantId, away: EntrantId) => EntrantId;
   /** The seeds the default winner reads. Absent = every side unseeded (home wins). */
   seeds?: ReadonlyMap<EntrantId, number>;
-  /** Fixture id → the entrant who forfeits it (the loser, `walkedOver: "loser"`). */
-  forfeit?: ReadonlyMap<string, EntrantId>;
+  /** Fixture id → the entrant who is out of the stage there, withdrawn or disqualified (the loser, `walkedOver: "loser"`). */
+  withdraw?: ReadonlyMap<string, EntrantId>;
+  /** Fixture id → the entrant who forfeits that one match (the loser of a walkover, no `walkedOver`): one loss, not out. */
+  oneLossForfeit?: ReadonlyMap<string, EntrantId>;
   /** Fixture ids both sides walked over (`walkedOver: "both"`). */
   doubleWalkover?: ReadonlySet<string>;
   /** Fixture ids voided. */
@@ -35,18 +40,27 @@ export interface PlayOutOptions {
   jointFinal?: boolean;
 }
 
+/** The rows carry neither the generator's feeds (`homeFrom` / `awayFrom`) nor `conditional`. A double elimination ranks a
+ *  winners'-bracket exit by the losers'-bracket fixture its loser feed names (W6, RB6-R7), so a caller that ranks one
+ *  with a winners'-bracket withdrawal or double walkover attaches the feeds first; without them `bracketRanks` ranks that
+ *  entrant last (the fallback) and completion refuses the stage (`exit_round_unreadable`, W6 X-FR-9). */
 export function playOutBracket(gen: GeneratedBracket, opts: PlayOutOptions = {}): BracketFixture[] {
   const seedOf = (id: EntrantId): number => opts.seeds?.get(id) ?? Number.MAX_SAFE_INTEGER;
   const winnerOf = opts.winner ?? ((home: EntrantId, away: EntrantId): EntrantId => (seedOf(away) < seedOf(home) ? away : home));
   const byId = new Map<string, BracketFixture>();
   const rows: BracketFixture[] = [];
+  const feedsOf = (g: GeneratedBracket["fixtures"][number]): Pick<BracketFixture, "homeFrom" | "awayFrom"> => ({
+    ...(g.homeFrom === undefined ? {} : { homeFrom: g.homeFrom }),
+    ...(g.awayFrom === undefined ? {} : { awayFrom: g.awayFrom }),
+  });
 
   const feed = (ref: BracketSlotRef | undefined): EntrantId | undefined => {
     if (ref === undefined) return undefined;
     const source = byId.get(ref.fixtureId);
     if (source === undefined) throw new Error(`playOutBracket: "${ref.fixtureId}" is fed before it is played`);
     if (ref.side === "winner") return source.winner;
-    // A forfeiter is out at the fixture it forfeited: it never takes a loser's seat onward (B3-10).
+    // A withdrawn entrant is out at the fixture it walked over: it never takes a loser's seat onward (B3-10). A
+    // one-loss forfeiter carries no `walkedOver` and drops like any loser.
     return source.walkedOver === "loser" ? undefined : source.loser;
   };
 
@@ -64,21 +78,28 @@ export function playOutBracket(gen: GeneratedBracket, opts: PlayOutOptions = {})
       status: "scheduled",
     };
     let row: BracketFixture;
-    const resetNotNeeded = g.conditional === true && (() => {
-      const gf = g.homeFrom === undefined ? undefined : byId.get(g.homeFrom.fixtureId);
-      return gf?.winner !== undefined && gf.winner === gf.home;
-    })();
-    const forfeiter = opts.forfeit?.get(g.id);
+    // `resetOwed` reads the rows played so far with the generator's feeds attached (the returned rows carry none); row
+    // i is gen.fixtures[i], one row per generated fixture.
+    const resetNotNeeded =
+      g.conditional === true &&
+      !resetOwed([...rows.map((played, i) => ({ ...played, ...feedsOf(gen.fixtures[i] as typeof g) })), { ...base, ...feedsOf(g), conditional: true }]);
+    const withdrawn = opts.withdraw?.get(g.id);
+    const forfeiter = opts.oneLossForfeit?.get(g.id);
     const present = home ?? away; // the one side seated, when only one is
+    const walkoverAgainst = (loser: EntrantId): BracketFixture => {
+      if (loser !== home && loser !== away) throw new Error(`playOutBracket: "${loser}" is not seated in ${g.id}`);
+      return { ...base, status: "walkover", winner: loser === home ? away : home, loser };
+    };
     if (g.award !== undefined) {
       row = { ...base, status: "walkover", winner: g.award };
     } else if (opts.voided?.has(g.id) === true || resetNotNeeded) {
       row = { ...base, status: "void" };
     } else if (home !== undefined && away !== undefined && opts.doubleWalkover?.has(g.id) === true) {
       row = { ...base, status: "walkover", walkedOver: "both" };
+    } else if (home !== undefined && away !== undefined && withdrawn !== undefined) {
+      row = { ...walkoverAgainst(withdrawn), walkedOver: "loser" };
     } else if (home !== undefined && away !== undefined && forfeiter !== undefined) {
-      if (forfeiter !== home && forfeiter !== away) throw new Error(`playOutBracket: "${forfeiter}" is not seated in ${g.id}`);
-      row = { ...base, status: "walkover", winner: forfeiter === home ? away : home, loser: forfeiter, walkedOver: "loser" };
+      row = walkoverAgainst(forfeiter);
     } else if (home !== undefined && away !== undefined && opts.jointFinal === true && g.isFinal === true) {
       row = { ...base, status: "decided", jointWinners: true };
     } else if (home !== undefined && away !== undefined) {
