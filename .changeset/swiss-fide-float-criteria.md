@@ -1,0 +1,7 @@
+---
+"@seazn-club/seazn-engine": minor
+---
+
+Swiss pairing applies FIDE's float criteria (C.04.3 Dutch, 1 February 2026; rule X-SW-32). `SwissHistory` gains an optional `rounds: SwissRoundFacts[]`: every earlier round of the stage, oldest first, each with its boards (`home`, `away`, both sides' scores before that round, and `forfeit: "home" | "away" | "none"` on a board that was not played) and its pairing-allocated `bye`. When `rounds` is present, `pairRound` derives who floated which way in each round itself (Art. 1.4.2–1.4.4: a played board between different scores downfloats the higher side and upfloats the lower; a bye and a forfeit win are downfloats; a forfeit loss, a double forfeit and an equal-score board are not), and in each score group, after the fewest floaters, weighs [C7] (the floaters' scores) and then [C14]–[C21] in FIDE's order over the previous round and the one before it. A new export, `swissRoundFloats(round)`, returns one round's floats. Facts that seat an entrant twice, give a score that is not a finite number, or mark a forfeit other than those three are refused `CONFIG_INVALID`.
+
+`SwissHistory.floats` is deprecated: it is read only when `rounds` is absent, and then exactly as in 10.0.4 (a pinned corpus proves the output byte-identical). The testkit simulation now builds `rounds`. Pairing is not part of the fold: no golden or `FOLD_EPOCH` moves. To adopt it, the app sends `rounds` instead of `floats`.
