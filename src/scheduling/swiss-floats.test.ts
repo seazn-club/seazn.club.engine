@@ -11,12 +11,17 @@
 //   [C16], [C17]        the same two, two rounds before;
 //   [C18]–[C21]         the score differences (highest first) of the MDPs who downfloated, and of the MDP opponents who
 //                       upfloated, the previous round and two rounds before, in that order;
-//   Art. 3.4 / 3.8.1    a candidate meeting every criterion is taken at once; otherwise the best one, the earlier one on a tie.
+//   Art. 3.4 / 3.8.1    a candidate meeting every criterion is taken at once; otherwise the best one, the earlier one on a tie;
+//   Art. 1.9.1  the pairing-allocated bye goes to the player who downfloats from the last bracket, so the criteria weigh it too;
+//   Art. 3.2.4  an MDP left out of S1 is in the Limbo, "bound to double-float" (its Note). The 2026 text gives it no score
+//               difference; by controller ruling 2026-11-23 (FIDE's intent) it counts for [C18]/[C20] with the pre-2026 C.04.3
+//               A.8 PSD value: its score less an artificial score one point under the bracket's lowest.
 // The bracket procedure is Art. 3.2–3.7: S1 holds the MDPs (or the top half), S2 the residents, S1[i] meets S2[i], and S2 is
 // transposed before residents are exchanged.
 //
 // The facts name earlier opponents outside the field (x1, x2, x3: entrants who have since withdrawn), so no rematch touches a
-// case and only the floats differ. Each case runs with chess colours off and on (the pairer's one sport dimension; no colour
+// case and only the floats differ. A case that needs a meeting inside the field holds it as a played board of an older round
+// between equal scores (`meetings`), which floats nobody: with `rounds`, every pair in `played` must be one. Each case runs with chess colours off and on (the pairer's one sport dimension; no colour
 // history is given, so the colour limits bind nobody) and counts what it checked: zero checked is a failure.
 import { describe, expect, it } from "vitest";
 import { mulberry32 } from "../core/rng.ts";
@@ -43,6 +48,23 @@ const unplayed = (home: string, away: string, homeScore: number, awayScore: numb
 });
 const round = (...boards: SwissRoundBoard[]): SwissRoundFacts => ({ boards });
 const QUIET: SwissRoundFacts = round(); // a round whose facts touch nobody in the field
+// The meetings in `met` as played boards between equal scores, packed into rounds (an entrant sits once per round), to go
+// before a case's own facts: older than the window, or inside it floating nobody (Art. 1.4.4).
+const meetings = (met: ReadonlySet<string>): SwissRoundFacts[] => {
+  const out: { boards: SwissRoundBoard[]; seated: Set<string> }[] = [];
+  for (const key of met) {
+    const [home, away] = key.split("|") as [string, string];
+    let r = out.find((o) => !o.seated.has(home) && !o.seated.has(away));
+    if (r === undefined) {
+      r = { boards: [], seated: new Set() };
+      out.push(r);
+    }
+    r.boards.push(played(home, away, 0, 0));
+    r.seated.add(home).add(away);
+  }
+  if (out.length === 0) throw new Error("premise: meetings() given no meeting");
+  return out.map((o) => round(...o.boards));
+};
 
 const pairs = (...boards: [string, string][]): string[] => boards.map(([a, b]) => pairKey(a, b)).sort();
 const boardsOf = (r: SwissPairResult): string[] => (r.ok ? r.pairings.map((p) => pairKey(p.home, p.away)).sort() : [`refused: ${r.reason}`]);
@@ -214,6 +236,19 @@ describe("X-SW-32 the criteria are weighed together, in FIDE's order, over the w
     expect(checked).toBe(4);
   });
 
+  it("X-SW-32 [C14] counts residents only, so [C15] sends a moved-down player who downfloated the previous round into the Limbo to spare an upfloated resident", () => {
+    // A and G (3) have met and both float into {A G | d e f} (on 2), which floats one on to b (1). A has met e and f, G has met
+    // e, b has met e and f. A floating resident is cheaper by [C7] (2 against 3), but none can be one: d leaves A without a
+    // partner, and e or f would meet b again. So one MDP is in the Limbo, and [C7] ties A and G. A downfloated the previous
+    // round, d upfloated it. (i) G in the Limbo: A–d, e–f: [C15] 1. (ii) A in the Limbo: G–d, e–f: [C15] 1; (iii) G–f, d–e:
+    // [C15] 0. [C14] counts no one in any of them (A and G are not residents), so [C15] decides: (iii), then A–b, though A
+    // double-floats ([C18] after [C15]). Counting A under [C14] would take (i).
+    const field = [row("A", 3, 1), row("G", 3, 2), row("d", 2, 3), row("e", 2, 4), row("f", 2, 5), row("b", 1, 6)];
+    const met = new Set([pairKey("A", "G"), pairKey("A", "e"), pairKey("A", "f"), pairKey("G", "e"), pairKey("b", "e"), pairKey("b", "f")]);
+    const facts = [round(played("A", "x1", 2, 1), played("x2", "d", 1, 0))];
+    expect(expectBoards(field, { played: met, rounds: [...meetings(met), ...facts] }, pairs(["G", "f"], ["d", "e"], ["A", "b"]), "C15 over keeping A paired")).toBe(2);
+  });
+
   it("X-SW-32 [C7] outranks the float criteria: a moved-down player never double-floats to spare a resident who downfloated the previous round", () => {
     // Bracket {M | Y X}, both residents downfloated the previous round. Floating M instead would meet [C14] but not [C7] (M's
     // 2 points over a resident's 1), which ranks higher: a resident floats, the bottom one, X.
@@ -228,6 +263,7 @@ describe("X-SW-32 the criteria are weighed together, in FIDE's order, over the w
 // with B 1.
 const F4 = [row("A", 3, 1), row("B", 2, 2), row("q1", 1, 3), row("q2", 1, 4)];
 const F4_PLAYED = new Set([pairKey("A", "B")]);
+const F4_MET = meetings(F4_PLAYED);
 const A_Q1 = pairs(["A", "q1"], ["B", "q2"]); // (a)
 const A_Q2 = pairs(["A", "q2"], ["B", "q1"]); // (b)
 
@@ -235,19 +271,19 @@ describe("X-SW-32 the score-difference criteria [C18]–[C21] (C.04.3 Art. 2.4.1
   it("X-SW-32 [C19]: the resident who upfloated the previous round meets the MDP nearer its score, whichever of q1 and q2 it is", () => {
     // q2 upfloated: (a) [C15] 1, [C19] [1]; (b) [C15] 1, [C19] [2] → (a). q1 upfloated: (a) [C19] [2]; (b) [C19] [1] → (b).
     let checked = 0;
-    checked += expectBoards(F4, { played: F4_PLAYED, rounds: [round(played("x1", "q2", 2, 1))] }, A_Q1, "q2 upfloated");
-    checked += expectBoards(F4, { played: F4_PLAYED, rounds: [round(played("x1", "q1", 2, 1))] }, A_Q2, "q1 upfloated");
+    checked += expectBoards(F4, { played: F4_PLAYED, rounds: [...F4_MET, round(played("x1", "q2", 2, 1))] }, A_Q1, "q2 upfloated");
+    checked += expectBoards(F4, { played: F4_PLAYED, rounds: [...F4_MET, round(played("x1", "q1", 2, 1))] }, A_Q2, "q1 upfloated");
     expect(checked).toBe(4);
   });
 
   it("X-SW-32 [C21]: the same, two rounds before, and nothing three rounds before", () => {
     const q2Up = round(played("x1", "q2", 2, 1));
     let checked = 0;
-    checked += expectBoards(F4, { played: F4_PLAYED, rounds: [q2Up, QUIET] }, A_Q1, "two rounds before");
+    checked += expectBoards(F4, { played: F4_PLAYED, rounds: [...F4_MET, q2Up, QUIET] }, A_Q1, "two rounds before");
     // three rounds before: no criterion reads it, so no criterion separates (a) from (b), and the order the pairer generates
     // its candidates in decides. FIDE's first is (a); the engine's (carried floaters arrive bottom first, so B chooses first)
     // is (b): the deviation X-SW-2 records, read here rather than assumed.
-    checked += expectBoards(F4, { played: F4_PLAYED, rounds: [q2Up, QUIET, QUIET] }, A_Q2, "three rounds before");
+    checked += expectBoards(F4, { played: F4_PLAYED, rounds: [...F4_MET, q2Up, QUIET, QUIET] }, A_Q2, "three rounds before");
     expect(checked).toBe(4);
   });
 
@@ -260,21 +296,21 @@ describe("X-SW-32 the score-difference criteria [C18]–[C21] (C.04.3 Art. 2.4.1
     const field = [row("A", 3, 1), row("B", 2, 2), row("u", 1, 3), row("t", 1, 4), row("n1", 1, 5), row("n2", 1, 6)];
     const met = new Set([pairKey("A", "B"), pairKey("u", "t"), pairKey("u", "n1"), pairKey("u", "n2"), pairKey("A", "n1"), pairKey("A", "n2")]);
     const facts = [round(played("x1", "t", 2, 1)), round(played("x2", "u", 2, 1))];
-    expect(expectBoards(field, { played: met, rounds: facts }, pairs(["A", "u"], ["B", "n1"], ["t", "n2"]), "C17 over C19")).toBe(2);
+    expect(expectBoards(field, { played: met, rounds: [...meetings(met), ...facts] }, pairs(["A", "u"], ["B", "n1"], ["t", "n2"]), "C17 over C19")).toBe(2);
   });
 
-  it("X-SW-32 [C18] beats [C19]: the MDP who downfloated the previous round is left unpaired, though that sends an upfloated resident to the farther MDP", () => {
+  it("X-SW-32 [C18] beats [C19] (Limbo read with the pre-2026 PSD value, controller ruling 2026-11-23): the MDP who downfloated the previous round is paired, though that sends an upfloated resident to the farther MDP", () => {
     // a (3), d and e (2) have all met, so all three float into {a d e | b c} (on 1); b has met e. Two pairs, one MDP in the
-    // Limbo ([C6]); [C7] puts d or e there, not a. d downfloated the previous round, b upfloated it. MDP sets by smallest
-    // differing BSN (Art. 4.4.2): S1 [a d] (e in the Limbo): (i) a–b d–c: [C15] 1, [C18] [1], [C19] [2]; (ii) a–c d–b:
-    // [C15] 1, [C18] [1], [C19] [1]. S1 [a e] (d in the Limbo): (iii) a–b e–c: [C15] 1, [C18] none, [C19] [2]; a–c e–b is a
-    // rematch. Best by [C18]: (iii), and d meets f (0) below. [C19] first would take (ii), and e would meet f. In a bracket
-    // every resident has one score, so an MDP's score difference is fixed once it is paired: [C18] can only tell candidates
-    // apart by who is left in the Limbo, and this rig reads the Limbo literally, as the [C18], [C20] test above does.
+    // Limbo ([C6]); [C7] puts d or e there, not a. e downfloated the previous round, b upfloated it. A paired MDP's score
+    // difference is its score less 1; one in the Limbo counts its score less 0 (one under the bracket's lowest). MDP sets by
+    // smallest differing BSN (Art. 4.4.2): S1 [a d] (e in the Limbo): (i) a–b d–c: [C15] 1, [C18] [2], [C19] [2]; (ii) a–c d–b:
+    // [C15] 1, [C18] [2], [C19] [1]. S1 [a e] (d in the Limbo): (iii) a–b e–c: [C15] 1, [C18] [1], [C19] [2]; a–c e–b is a
+    // rematch. Best by [C18]: (iii), then d meets f (0) below. [C19] first would take (ii), and so would reading the Limbo
+    // literally (e unpaired, [C18] empty), each sending e to f.
     const field = [row("a", 3, 1), row("d", 2, 2), row("e", 2, 3), row("b", 1, 4), row("c", 1, 5), row("f", 0, 6)];
     const met = new Set([pairKey("a", "d"), pairKey("a", "e"), pairKey("d", "e"), pairKey("b", "e")]);
-    const facts = [round(played("d", "x1", 1, 0), played("x2", "b", 1, 0))];
-    expect(expectBoards(field, { played: met, rounds: facts }, pairs(["a", "b"], ["c", "e"], ["d", "f"]), "C18 over C19")).toBe(2);
+    const facts = [round(played("e", "x1", 1, 0), played("x2", "b", 1, 0))];
+    expect(expectBoards(field, { played: met, rounds: [...meetings(met), ...facts] }, pairs(["a", "b"], ["c", "e"], ["d", "f"]), "C18 over C19")).toBe(2);
   });
 
   // F5. X and Y (2) have met; q (1), z (0). FIDE: {X Y} cannot pair, both float; bracket {X Y | q}: one MDP meets q, the
@@ -282,15 +318,72 @@ describe("X-SW-32 the score-difference criteria [C18]–[C21] (C.04.3 Art. 2.4.1
   // (Art. 4.4.2): (a) X–q with Y in the Limbo, then (b) Y–q with X in the Limbo.
   const F5 = [row("X", 2, 1), row("Y", 2, 2), row("q", 1, 3), row("z", 0, 4)];
   const F5_PLAYED = new Set([pairKey("X", "Y")]);
-  it("X-SW-32 [C18], [C20]: an MDP who downfloated the previous round, or two rounds before, is the one left unpaired (the 2026 text gives a score difference only to a board)", () => {
-    // Y downfloated: (a) leaves Y unpaired, no score difference to count: [C18] empty, perfect. (b) pairs Y: [C18] [1].
-    // X downfloated: (a) [C18] [1]; (b) empty → (b).
+  const F5_MET = meetings(F5_PLAYED);
+  it("X-SW-32 [C18], [C20] (Limbo read with the pre-2026 PSD value, controller ruling 2026-11-23): the MDP who downfloated the previous round, or two rounds before, is the one paired; the other double-floats", () => {
+    // A paired MDP's score difference is 2 − 1 = 1; one in the Limbo counts 2 − (1 − 1) = 2. X downfloated: (a) pairs X:
+    // [C18] [1]; (b) leaves X in the Limbo: [C18] [2] → (a), X–q and Y–z. Y downfloated: (a) [2]; (b) [1] → (b). Two rounds
+    // before, [C20] the same. Three rounds before nothing reads it, and the engine's own order decides: (b), where FIDE's
+    // generation order (Art. 4.4.2) would take (a), the deviation X-SW-32 records. The X cases are the ones whose answer differs
+    // from that order, so they are what witnesses the criterion.
+    const X_Q = pairs(["X", "q"], ["Y", "z"]); // (a)
+    const Y_Q = pairs(["Y", "q"], ["X", "z"]); // (b)
     let checked = 0;
-    checked += expectBoards(F5, { played: F5_PLAYED, rounds: [round(played("Y", "x1", 2, 1))] }, pairs(["X", "q"], ["Y", "z"]), "Y, previous round");
-    checked += expectBoards(F5, { played: F5_PLAYED, rounds: [round(played("X", "x1", 2, 1))] }, pairs(["Y", "q"], ["X", "z"]), "X, previous round");
-    checked += expectBoards(F5, { played: F5_PLAYED, rounds: [round(played("Y", "x1", 2, 1)), QUIET] }, pairs(["X", "q"], ["Y", "z"]), "Y, two rounds before");
-    checked += expectBoards(F5, { played: F5_PLAYED, rounds: [round(played("Y", "x1", 2, 1)), QUIET, QUIET] }, pairs(["Y", "q"], ["X", "z"]), "Y, three rounds before: the engine's own order");
+    checked += expectBoards(F5, { played: F5_PLAYED, rounds: [...F5_MET, round(played("X", "x1", 2, 1))] }, X_Q, "X, previous round");
+    checked += expectBoards(F5, { played: F5_PLAYED, rounds: [...F5_MET, round(played("Y", "x1", 2, 1))] }, Y_Q, "Y, previous round");
+    checked += expectBoards(F5, { played: F5_PLAYED, rounds: [...F5_MET, round(played("X", "x1", 2, 1)), QUIET] }, X_Q, "X, two rounds before");
+    checked += expectBoards(F5, { played: F5_PLAYED, rounds: [...F5_MET, round(played("X", "x1", 2, 1)), QUIET, QUIET] }, Y_Q, "X, three rounds before: the engine's own order");
     expect(checked).toBe(8);
+  });
+});
+
+describe("X-SW-32 the pairing-allocated bye is the last bracket's downfloater (C.04.3 Art. 1.9.1)", () => {
+  // F6. p1 p2 on 2; q1 q2 q3 on 1 (odd field). FIDE: {p1 p2} pairs; the last bracket {q1 q2 q3} has S1 [q1], S2 [q2 q3]:
+  // (a) q1–q2, q3 downfloats, then (b) q1–q3, q2 downfloats, then the exchange (c) q2–q3, q1 downfloats. The downfloater
+  // takes the bye.
+  const F6 = [row("p1", 2, 1), row("p2", 2, 2), row("q1", 1, 3), row("q2", 1, 4), row("q3", 1, 5)];
+  const bye = (r: SwissPairResult): string => (r.ok ? `${boardsOf(r).join(" ")} bye ${r.bye ?? "none"}` : `refused: ${r.reason}`);
+  const expectBye = (history: SwissHistory, boards: string[], to: string, label: string): number => {
+    let checked = 0;
+    for (const chess of [false, true]) {
+      expect(bye(pairRound(F6, history, { chess })), `${label}, chess ${chess}`).toBe(`${boards.join(" ")} bye ${to}`);
+      checked++;
+    }
+    return checked;
+  };
+  const Q3_BYE = pairs(["p1", "p2"], ["q1", "q2"]); // (a)
+  const Q2_BYE = pairs(["p1", "p2"], ["q1", "q3"]); // (b)
+
+  it("X-SW-32 [C14] and [C16] steer the bye: one who downfloated the previous round, or two rounds before, does not take it", () => {
+    // No float in the window: (a) is perfect, q3. q3 downfloated the previous round: (a) [C14] 1; (b) is perfect, q2. Two rounds
+    // before: [C16], the same. Three rounds before: nothing reads it, q3.
+    const q3Down = round(played("q3", "x1", 1, 0));
+    let checked = expectBye({ played: new Set(), rounds: [QUIET] }, Q3_BYE, "q3", "no float");
+    checked += expectBye({ played: new Set(), rounds: [q3Down] }, Q2_BYE, "q2", "q3, previous round");
+    checked += expectBye({ played: new Set(), rounds: [q3Down, QUIET] }, Q2_BYE, "q2", "q3, two rounds before");
+    checked += expectBye({ played: new Set(), rounds: [q3Down, QUIET, QUIET] }, Q3_BYE, "q3", "q3, three rounds before");
+    // The deprecated path is unchanged: without facts the bye stays at the bottom.
+    checked += expectBye({ played: new Set() }, Q3_BYE, "q3", "no facts");
+    expect(checked).toBe(10);
+  });
+
+  it("X-SW-32 [C14] beats [C16] for the bye, and [C7] keeps it on the lowest score whatever floated", () => {
+    // q1 had the bye three rounds ago (Art. 1.4.3 a downfloat, outside the window; the P-A4 bar takes it out of the running).
+    // q2 downfloated two rounds before, q3 the previous round. (a) q3 down: [C14] 1. (b) q2 down: [C14] 0, [C16] 1 → (b), q2.
+    const q1Bye: SwissRoundFacts = { boards: [], bye: "q1" };
+    let checked = expectBye(
+      { played: new Set(), byes: new Set(["q1"]), rounds: [q1Bye, round(played("q2", "x1", 1, 0)), round(played("q3", "x2", 1, 0))] },
+      Q2_BYE,
+      "q2",
+      "C14 over C16",
+    );
+    // Every q downfloated the previous round: [C14] is 1 whoever floats, and [C7] still keeps the bye off p1 and p2 (2): (a).
+    checked += expectBye(
+      { played: new Set(), rounds: [round(played("q1", "x1", 1, 0), played("q2", "x2", 1, 0), played("q3", "x3", 1, 0))] },
+      Q3_BYE,
+      "q3",
+      "every q downfloated",
+    );
+    expect(checked).toBe(4);
   });
 });
 
@@ -311,6 +404,33 @@ describe("X-SW-32 the contract around the facts", () => {
     expect(pairRound(F1, history, { chess: true })).toEqual(first);
     expect(JSON.stringify(facts)).toBe(before);
     expect(boardsOf(first)).toEqual(P2_DOWN);
+  });
+
+  it("X-SW-32 facts that miss a meeting in `played` are refused CONFIG_INVALID, naming the pair (wrong facts cannot pair quietly)", () => {
+    const ab = new Set([pairKey("p1", "p2")]);
+    const cases: [string, SwissRoundFacts[]][] = [
+      ["no round holds it", [QUIET]],
+      ["an empty list", []],
+      ["only as a forfeit (not a game played, Art. 1.4.2)", [round(unplayed("p1", "p2", 0, 0, "home"))]],
+      ["another pair played", [round(played("p1", "p3", 0, 0))]],
+    ];
+    let refused = 0;
+    for (const [label, rounds] of cases) {
+      expect(() => pairRound(F1, { played: ab, rounds }), label).toThrowError(
+        expect.objectContaining({ code: "CONFIG_INVALID", message: expect.stringContaining("p1|p2") }),
+      );
+      refused++;
+    }
+    expect(refused).toBe(4);
+    // The positive pair: held as a played board in any round, older than the window included, it pairs; and without facts
+    // nothing is checked.
+    let paired = 0;
+    for (const rounds of [[round(played("p2", "p1", 0, 0))], [round(played("p1", "p2", 0, 0)), QUIET, QUIET]]) {
+      expect(pairRound(F1, { played: ab, rounds }).ok).toBe(true);
+      paired++;
+    }
+    expect(pairRound(F1, { played: ab }).ok).toBe(true);
+    expect(paired + 1).toBe(3);
   });
 
   it("X-SW-32 an entrant seated twice in one round's facts is refused CONFIG_INVALID (assumption → guard)", () => {

@@ -69,7 +69,8 @@ export interface SwissHistory {
   /** X-SW-32: the facts of every earlier round of this stage, oldest first, the round just played last. When present, the
    *  pairer derives who floated which way in each round itself (`swissRoundFloats`, FIDE C.04.3 Art. 1.4.2–1.4.4) and, in each
    *  score group, weighs [C7] and then the float criteria [C14]–[C21], reading the previous round and the one before it.
-   *  `floats` is then ignored. Only the last two rounds are read, but every round given is checked. */
+   *  `floats` is then ignored. Only the last two rounds are read, but every round given is checked, and every pair in
+   *  `played` must be a played board (no `forfeit`) of one of them: facts that miss a meeting are refused, never read. */
   rounds?: readonly SwissRoundFacts[];
 }
 
@@ -417,6 +418,20 @@ export function pairRound(
   let floatWindow: { previous: Map<EntrantId, SwissFloat>; twoBefore: Map<EntrantId, SwissFloat> } | undefined;
   if (history.rounds !== undefined) {
     const perRound = history.rounds.map(swissRoundFloats);
+    // The facts and the rematch set describe one stage: a meeting in `played` that no round holds as a played board means the
+    // facts are not this stage's whole history (a round left out, a board misread), and a float read off them would be a
+    // guess. Refused, so wrong facts cannot pair quietly.
+    const metInFacts = new Set<string>();
+    for (const r of history.rounds) {
+      for (const b of r.boards) if (b.forfeit === undefined) metInFacts.add(pairKey(b.home, b.away));
+    }
+    for (const key of history.played) {
+      if (!metInFacts.has(key)) {
+        throw new EngineError("CONFIG_INVALID", `pairRound: history.played holds ${key} but no round in history.rounds has that board played`, {
+          pair: key,
+        });
+      }
+    }
     const none = new Map<EntrantId, SwissFloat>();
     floatWindow = { previous: perRound[perRound.length - 1] ?? none, twoBefore: perRound[perRound.length - 2] ?? none };
   }
@@ -442,6 +457,21 @@ export function pairRound(
     const byed = history.byes ?? new Set<EntrantId>();
     candidates = [...ordered].reverse().filter((s) => !byed.has(s.entrantId));
     if (candidates.length === 0) return refuse("no_bye_candidate");
+    // X-SW-32: the bye goes to the player who downfloats from the last bracket (C.04.3 Art. 1.9.1), so with the round facts the
+    // float criteria weigh it too: among candidates on one score, one who did not downfloat the previous round goes first
+    // ([C14]; [C18] for an MDP, whose score difference is then the same), then one who did not two rounds before ([C16],
+    // [C20]); otherwise the order above. Without the facts the order is unchanged.
+    const fw = floatWindow;
+    if (fw !== undefined) {
+      const downs = (s: SwissStanding): [number, number] => [
+        fw.previous.get(s.entrantId) === "down" ? 1 : 0,
+        fw.twoBefore.get(s.entrantId) === "down" ? 1 : 0,
+      ];
+      candidates = (candidates as SwissStanding[])
+        .map((s, i) => ({ s, i, d: downs(s) }))
+        .sort((a, b) => a.s.score - b.s.score || a.d[0] - b.d[0] || a.d[1] - b.d[1] || a.i - b.i)
+        .map((c) => c.s);
+    }
   }
   const remainderOf = (bye: SwissStanding | undefined): SwissStanding[] =>
     bye === undefined ? ordered : ordered.filter((s) => s !== bye);
@@ -608,13 +638,23 @@ export function pairRound(
   ): Found | "out" => {
     const carried = new Set(carry.map((s) => s.entrantId));
     // [C14]/[C16] count the RESIDENT floaters (an MDP floating on is not one); [C15]/[C17] the MDP opponents, the lower side of
-    // a carried entrant's board; [C18]/[C20] the MDPs paired here, the higher side. The 2026 text gives a score difference only
-    // to a board, so an MDP left unpaired adds none. The engine may seat two MDPs together, which FIDE never does: there the
-    // lower one takes the upfloat (Art. 1.4.2) and is read as the MDP opponent.
+    // a carried entrant's board; [C18]/[C20] the MDPs, the higher side of their board. An MDP left unpaired (in the Limbo,
+    // Art. 3.2.4, whose Note calls it "bound to double-float") has no board, and the 2026 text gives it no score difference.
+    // Controller ruling 2026-11-23 (FIDE's intent over the literal text): it counts with the pre-2026 C.04.3 A.8 PSD value, its
+    // score less an artificial score one point under the bracket's lowest, which is more than any board of it in this bracket
+    // could give: leaving an MDP who downfloated in the Limbo is never cheaper than pairing it. A paired MDP's difference against
+    // a resident is the same in every candidate (one bracket, one resident score), so the board pushes below move an order only
+    // on a board of two MDPs. The engine may seat two MDPs together, which FIDE never does: there the lower one takes the upfloat
+    // (Art. 1.4.2) and is read as the MDP opponent.
+    const artificial = Math.min(...current.map((s) => s.score)) - 1;
     const costOf = (floaters: readonly SwissStanding[], boards: Boards): FloatCost => {
       const cost: FloatCost = { c7: floaters.map((f) => f.score).sort((x, y) => y - x), counts: [0, 0, 0, 0], differences: [[], [], [], []] };
       for (const f of floaters) {
-        if (carried.has(f.entrantId)) continue;
+        if (carried.has(f.entrantId)) {
+          if (fw.previous.get(f.entrantId) === "down") cost.differences[0].push(f.score - artificial);
+          if (fw.twoBefore.get(f.entrantId) === "down") cost.differences[2].push(f.score - artificial);
+          continue;
+        }
         if (fw.previous.get(f.entrantId) === "down") cost.counts[0]++;
         if (fw.twoBefore.get(f.entrantId) === "down") cost.counts[2]++;
       }
